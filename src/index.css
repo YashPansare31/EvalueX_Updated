@@ -1,0 +1,184 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* AI Grader Design System - Modern EdTech Aesthetic */
+
+@layer base {
+  :root {
+    /* Core backgrounds - Clean whites with subtle warmth */
+    --background: 210 20% 99%;
+    --foreground: 222 47% 11%;
+
+    /* Cards with soft shadows */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    /* Popovers */
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary - Deep Navy Blue (trust/education) */
+    --primary: 222 47% 20%;
+    --primary-foreground: 210 40% 98%;
+
+    /* Secondary - Soft blue-gray */
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 20%;
+
+    /* Muted - Subtle grays */
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    /* Accent - Teal for AI/tech feel */
+    --accent: 173 58% 39%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Success - Green for graded/complete */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    /* Warning - Amber for pending */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Borders and inputs */
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 173 58% 39%;
+
+    --radius: 0.75rem;
+
+    /* Hero gradient */
+    --gradient-hero: linear-gradient(135deg, hsl(222 47% 20%) 0%, hsl(222 47% 35%) 50%, hsl(173 58% 39%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(210 20% 98%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(173 58% 39%) 0%, hsl(173 58% 50%) 100%);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(222 47% 11% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(222 47% 11% / 0.1), 0 2px 4px -2px hsl(222 47% 11% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(222 47% 11% / 0.1), 0 4px 6px -4px hsl(222 47% 11% / 0.1);
+    --shadow-xl: 0 20px 25px -5px hsl(222 47% 11% / 0.1), 0 8px 10px -6px hsl(222 47% 11% / 0.1);
+    --shadow-glow: 0 0 40px hsl(173 58% 39% / 0.15);
+
+    /* Sidebar - Dark navy theme */
+    --sidebar: 222 47% 14%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 222 47% 20%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 222 47% 20%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222 47% 20%;
+    --sidebar-ring: 173 58% 39%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer utilities {
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+  
+  .gradient-card {
+    background: var(--gradient-card);
+  }
+  
+  .gradient-accent {
+    background: var(--gradient-accent);
+  }
+  
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  
+  .text-gradient {
+    background: var(--gradient-hero);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-20px); }
+  }
+  
+  .animate-pulse-slow {
+    animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+/* React Quill custom styles */
+.ql-container {
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.ql-editor {
+  min-height: 300px;
+  padding: 1rem;
+}
+
+.ql-editor.ql-blank::before {
+  color: hsl(var(--muted-foreground));
+  font-style: normal;
+}
+
+.ql-toolbar {
+  border-color: hsl(var(--border)) !important;
+  background: hsl(var(--muted) / 0.5);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.ql-container {
+  border-color: hsl(var(--border)) !important;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.ql-toolbar .ql-stroke {
+  stroke: hsl(var(--foreground));
+}
+
+.ql-toolbar .ql-fill {
+  fill: hsl(var(--foreground));
+}
+
+.ql-toolbar .ql-picker {
+  color: hsl(var(--foreground));
+}
+
+.ql-toolbar button:hover .ql-stroke,
+.ql-toolbar .ql-picker-label:hover .ql-stroke {
+  stroke: hsl(var(--accent));
+}
+
+.ql-toolbar button:hover .ql-fill,
+.ql-toolbar .ql-picker-label:hover .ql-fill {
+  fill: hsl(var(--accent));
+}
+
+.ql-toolbar button.ql-active .ql-stroke {
+  stroke: hsl(var(--accent));
+}
+
+.ql-toolbar button.ql-active .ql-fill {
+  fill: hsl(var(--accent));
+}
