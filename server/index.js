@@ -3,6 +3,13 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
+import multer from 'multer';
+
+// Use dynamic import workaround for CommonJS package in ESM
+let pdfParse;
+import('pdf-parse').then(mod => {
+  pdfParse = mod.default || mod;
+});
 
 dotenv.config();
 
@@ -10,6 +17,8 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -120,6 +129,94 @@ Begin extraction now:`;
 });
 
 // ============================================================================
+// POST /api/extract-questions-pdf
+// Extract questions and model answers from an uploaded PDF
+// ============================================================================
+app.post('/api/extract-questions-pdf', verifyAuth, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No PDF file uploaded' });
+    }
+
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
+    }
+
+    // Parse the PDF
+    const pdfData = await pdfParse(req.file.buffer);
+    const pdfText = pdfData.text;
+
+    if (!pdfText.trim()) {
+      return res.status(400).json({ error: 'Appears to be an empty or unreadable PDF' });
+    }
+
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const systemPrompt = `You are an expert exam parser. You receive the raw text extracted from a PDF which contains exam questions, marks/points, and model answers.
+Your task is to extract all questions perfectly and output ONLY a valid JSON array of objects.
+Each object must represent one question and strictly contain these exact keys:
+- "text": The full text of the question.
+- "points": A number representing the maximum points or marks for this question (default to 10 if not found).
+- "modelAnswer": The expected or model answer provided in the text.
+
+Do NOT include any markdown formatting wrappers like \`\`\`json in your response. Output *only* the raw JSON string. If you cannot extract questions, return an empty array [].`;
+
+    const userPrompt = `Here is the extracted text from the PDF:
+
+---
+${pdfText}
+---
+
+Extract the questions as requested in purely raw JSON format.`;
+
+    const response = await model.generateContent([
+      systemPrompt,
+      userPrompt,
+    ]);
+
+    let aiResponseText = response.response.text();
+
+    // Clean up potential markdown formatting accidentally returned by Gemini
+    if (aiResponseText.startsWith('\`\`\`json')) {
+      aiResponseText = aiResponseText.replace(/^\`\`\`json\s*/, '').replace(/\s*\`\`\`$/, '');
+    } else if (aiResponseText.startsWith('\`\`\`')) {
+      aiResponseText = aiResponseText.replace(/^\`\`\`\s*/, '').replace(/\s*\`\`\`$/, '');
+    }
+
+    let questionsArray;
+    try {
+      questionsArray = JSON.parse(aiResponseText);
+    } catch (parseError) {
+      console.error('Failed to parse Gemini output as JSON:', aiResponseText);
+      return res.status(500).json({ error: 'Failed to parse AI response into questions array' });
+    }
+
+    if (!Array.isArray(questionsArray)) {
+      questionsArray = [questionsArray]; // Fallback if it returned a single object
+    }
+
+    return res.json({
+      success: true,
+      questions: questionsArray,
+    });
+  } catch (error) {
+    console.error('PDF extraction error:', error.message);
+
+    if (error.message?.includes('API key')) {
+      return res.status(500).json({ error: 'Invalid Gemini API key' });
+    }
+    if (error.message?.includes('rate')) {
+      return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+    }
+
+    return res.status(500).json({
+      error: error.message || 'Unknown PDF extraction error',
+    });
+  }
+});
+
+// ============================================================================
 // POST /api/grade-submission
 // Grade student submission using Gemini
 // ============================================================================
@@ -175,8 +272,8 @@ FEEDBACK:
 [Your detailed feedback here in plain text format]`;
 
     const response = await model.generateContent([
-      { role: 'user', parts: [{ text: systemPrompt }] },
-      { role: 'user', parts: [{ text: userPrompt }] },
+      systemPrompt,
+      userPrompt,
     ]);
 
     const aiResponse = response.response.text();

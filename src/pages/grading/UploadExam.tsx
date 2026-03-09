@@ -8,8 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Upload, FileUp, Loader2, FileText, X, CheckCircle2, 
+import {
+  Upload, FileUp, Loader2, FileText, X, CheckCircle2,
   Plus, Trash2, GripVertical, Save, BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -36,7 +36,7 @@ interface UploadedFile {
 export default function UploadExam() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  
+
   // Form state
   const [examTitle, setExamTitle] = useState('');
   const [examDescription, setExamDescription] = useState('');
@@ -48,6 +48,7 @@ export default function UploadExam() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExtractingQuestions, setIsExtractingQuestions] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -69,7 +70,7 @@ export default function UploadExam() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     const files = Array.from(e.dataTransfer.files);
     handleFiles(files);
   }, []);
@@ -83,13 +84,13 @@ export default function UploadExam() {
 
   const handleFiles = (files: File[]) => {
     const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-    
+
     files.forEach(file => {
       if (!validTypes.includes(file.type)) {
         toast.error(`${file.name} is not a supported file type`);
         return;
       }
-      
+
       const newFile: UploadedFile = {
         id: crypto.randomUUID(),
         name: file.name,
@@ -97,12 +98,12 @@ export default function UploadExam() {
         type: file.type,
         status: 'uploading'
       };
-      
+
       setUploadedFiles(prev => [...prev, newFile]);
-      
+
       // Simulate upload - in production, this would upload to storage
       setTimeout(() => {
-        setUploadedFiles(prev => 
+        setUploadedFiles(prev =>
           prev.map(f => f.id === newFile.id ? { ...f, status: 'complete' } : f)
         );
       }, 1500);
@@ -128,9 +129,73 @@ export default function UploadExam() {
   };
 
   const updateQuestion = (id: string, field: keyof Question, value: string | number) => {
-    setQuestions(prev => 
+    setQuestions(prev =>
       prev.map(q => q.id === id ? { ...q, [field]: value } : q)
     );
+  };
+
+  const handleQuestionsPdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
+      toast.error('Please upload a valid PDF file');
+      return;
+    }
+
+    setIsExtractingQuestions(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Get valid auth token
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+
+      const response = await fetch('http://localhost:3001/api/extract-questions-pdf', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to extract questions');
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.questions && data.questions.length > 0) {
+        // Map data to the Question type
+        const newQuestions = data.questions.map((q: any) => ({
+          id: crypto.randomUUID(),
+          text: q.text || '',
+          points: q.points || 10,
+          modelAnswer: q.modelAnswer || ''
+        }));
+
+        // Remove empty first question if replacing it
+        setQuestions(prev => {
+          if (prev.length === 1 && prev[0].text === '' && prev[0].modelAnswer === '') {
+            return newQuestions;
+          }
+          return [...prev, ...newQuestions];
+        });
+
+        toast.success(`Successfully extracted ${newQuestions.length} questions`);
+      } else {
+        toast.error('No questions were found in the PDF');
+      }
+    } catch (error: any) {
+      console.error('Extraction error:', error);
+      toast.error(error.message || 'Error parsing PDF');
+    } finally {
+      setIsExtractingQuestions(false);
+      // Reset input
+      if (e.target) e.target.value = '';
+    }
   };
 
   // Save exam template
@@ -209,8 +274,8 @@ export default function UploadExam() {
     toolbar: [
       [{ 'header': [1, 2, 3, false] }],
       ['bold', 'italic', 'underline', 'strike'],
-      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-      [{ 'indent': '-1'}, { 'indent': '+1' }],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+      [{ 'indent': '-1' }, { 'indent': '+1' }],
       ['link'],
       ['clean']
     ],
@@ -280,17 +345,17 @@ export default function UploadExam() {
                   <div className="grid gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="title">Exam Title *</Label>
-                      <Input 
+                      <Input
                         id="title"
                         placeholder="e.g., Midterm Exam - Biology 101"
                         value={examTitle}
                         onChange={(e) => setExamTitle(e.target.value)}
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="description">Description</Label>
-                      <Textarea 
+                      <Textarea
                         id="description"
                         placeholder="Provide a brief description of the exam..."
                         value={examDescription}
@@ -302,7 +367,7 @@ export default function UploadExam() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="maxScore">Maximum Score</Label>
-                        <Input 
+                        <Input
                           id="maxScore"
                           type="number"
                           min={1}
@@ -383,10 +448,25 @@ export default function UploadExam() {
                     ))}
                   </AnimatePresence>
 
-                  <Button variant="outline" onClick={addQuestion} className="w-full gap-2">
-                    <Plus className="h-4 w-4" />
-                    Add Question
-                  </Button>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <input
+                        id="questions-pdf-upload"
+                        type="file"
+                        accept=".pdf"
+                        className="hidden"
+                        onChange={handleQuestionsPdfUpload}
+                      />
+                      <Button variant="outline" onClick={() => document.getElementById('questions-pdf-upload')?.click()} disabled={isExtractingQuestions} className="w-full gap-2">
+                        {isExtractingQuestions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        {isExtractingQuestions ? 'Extracting...' : 'Upload Questions from PDF'}
+                      </Button>
+                    </div>
+                    <Button variant="outline" onClick={addQuestion} className="w-full gap-2">
+                      <Plus className="h-4 w-4" />
+                      Add Question
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -427,12 +507,11 @@ Example:
                   <CardDescription>Upload exam papers, answer sheets, or supporting documents</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div 
-                    className={`border-2 border-dashed rounded-lg p-12 text-center transition-all cursor-pointer ${
-                      isDragging 
-                        ? 'border-accent bg-accent/5' 
+                  <div
+                    className={`border-2 border-dashed rounded-lg p-12 text-center transition-all cursor-pointer ${isDragging
+                        ? 'border-accent bg-accent/5'
                         : 'border-border hover:border-accent/50'
-                    }`}
+                      }`}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
