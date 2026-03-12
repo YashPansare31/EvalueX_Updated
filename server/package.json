@@ -1,32 +1,21 @@
 {
-  "name": "evaluex-backend",
-  "version": "1.0.0",
-  "description": "EvalueX backend API server",
-  "type": "module",
+  "name": "evaluex-server",
+  "version": "2.0.0",
+  "description": "EvalueX backend — Question-Centric Pipeline",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
-  "keywords": [
-    "evaluex",
-    "grading",
-    "ocr",
-    "gemini",
-    "api"
-  ],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
-    "@google/generative-ai": "^0.3.0",
-    "@supabase/supabase-js": "^2.39.8",
+    "@google/generative-ai": "^0.21.0",
+    "@supabase/supabase-js": "^2.45.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "multer": "^2.1.1",
-    "pdf-parse": "^2.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "openai": "^4.67.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.1.7"
   }
 }

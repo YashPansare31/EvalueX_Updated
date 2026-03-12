@@ -402,7 +402,119 @@ CREATE TRIGGER update_exam_rubrics_updated_at
   EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ============================================================
--- 7. INDEXES FOR PERFORMANCE
+-- 6b. MISSING COLUMNS (required by backend QCP pipeline)
+-- ============================================================
+
+-- Add optional_question_policy to assignments
+ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS optional_question_policy TEXT DEFAULT 'educator_choice';
+
+-- Add grading_status and answer_map to submissions
+ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS grading_status TEXT DEFAULT 'pending';
+ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS answer_map JSONB;
+
+-- Add optional_group to exam_questions
+ALTER TABLE public.exam_questions ADD COLUMN IF NOT EXISTS optional_group TEXT;
+
+-- ============================================================
+-- 7. SUBMISSION ANSWERS TABLE (QCP pipeline)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.submission_answers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  submission_id UUID NOT NULL REFERENCES public.submissions(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES public.exam_questions(id) ON DELETE CASCADE,
+  question_label TEXT,
+  extracted_text TEXT,
+  confidence NUMERIC,
+  page_numbers INTEGER[],
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  UNIQUE(submission_id, question_id)
+);
+
+ALTER TABLE public.submission_answers ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'submission_answers' AND policyname = 'Service role full access to submission_answers'
+  ) THEN
+    CREATE POLICY "Service role full access to submission_answers"
+    ON public.submission_answers FOR ALL
+    USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
+-- ============================================================
+-- 8. QUESTION GRADES TABLE (QCP pipeline)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.question_grades (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  submission_id UUID NOT NULL REFERENCES public.submissions(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES public.exam_questions(id) ON DELETE CASCADE,
+  question_label TEXT,
+  ai_score INTEGER DEFAULT 0,
+  max_score INTEGER DEFAULT 0,
+  ai_feedback TEXT,
+  rubric_breakdown JSONB DEFAULT '[]'::jsonb,
+  confidence TEXT DEFAULT 'medium',
+  is_counted BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  UNIQUE(submission_id, question_id)
+);
+
+ALTER TABLE public.question_grades ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'question_grades' AND policyname = 'Service role full access to question_grades'
+  ) THEN
+    CREATE POLICY "Service role full access to question_grades"
+    ON public.question_grades FOR ALL
+    USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
+DROP TRIGGER IF EXISTS update_question_grades_updated_at ON public.question_grades;
+CREATE TRIGGER update_question_grades_updated_at
+  BEFORE UPDATE ON public.question_grades
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ============================================================
+-- 9. MODEL ANSWERS TABLE (QCP pipeline)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.model_answers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  assignment_id UUID NOT NULL REFERENCES public.assignments(id) ON DELETE CASCADE,
+  question_id UUID NOT NULL REFERENCES public.exam_questions(id) ON DELETE CASCADE,
+  answer_text TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  UNIQUE(assignment_id, question_id)
+);
+
+ALTER TABLE public.model_answers ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'model_answers' AND policyname = 'Service role full access to model_answers'
+  ) THEN
+    CREATE POLICY "Service role full access to model_answers"
+    ON public.model_answers FOR ALL
+    USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
+DROP TRIGGER IF EXISTS update_model_answers_updated_at ON public.model_answers;
+CREATE TRIGGER update_model_answers_updated_at
+  BEFORE UPDATE ON public.model_answers
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ============================================================
+-- 10. INDEXES FOR PERFORMANCE
 -- ============================================================
 
 CREATE INDEX IF NOT EXISTS idx_profiles_user_id ON public.profiles(user_id);
@@ -411,9 +523,16 @@ CREATE INDEX IF NOT EXISTS idx_assignments_created_at ON public.assignments(crea
 CREATE INDEX IF NOT EXISTS idx_submissions_assignment_id ON public.submissions(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_final_score ON public.submissions(final_score) WHERE final_score IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submissions_graded_at ON public.submissions(graded_at DESC) WHERE graded_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_submissions_grading_status ON public.submissions(grading_status);
 CREATE INDEX IF NOT EXISTS idx_exam_questions_assignment_id ON public.exam_questions(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_exam_questions_order ON public.exam_questions(assignment_id, question_order);
 CREATE INDEX IF NOT EXISTS idx_exam_rubrics_assignment_id ON public.exam_rubrics(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_submission_answers_submission_id ON public.submission_answers(submission_id);
+CREATE INDEX IF NOT EXISTS idx_submission_answers_question_id ON public.submission_answers(question_id);
+CREATE INDEX IF NOT EXISTS idx_question_grades_submission_id ON public.question_grades(submission_id);
+CREATE INDEX IF NOT EXISTS idx_question_grades_question_id ON public.question_grades(question_id);
+CREATE INDEX IF NOT EXISTS idx_model_answers_assignment_id ON public.model_answers(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_model_answers_question_id ON public.model_answers(question_id);
 
 -- ============================================================
 -- DONE! Your EvalueX database schema is now ready.
