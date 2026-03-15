@@ -1,0 +1,1 @@
+ALTER TABLE rubrics ADD COLUMN IF NOT EXISTS content TEXT;

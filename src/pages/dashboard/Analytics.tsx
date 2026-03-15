@@ -14,7 +14,7 @@ export default function Analytics() {
   const [loadingData, setLoadingData] = useState(true);
   const [scoreData, setScoreData] = useState<{ name: string; score: number }[]>([]);
   const [gradeDistribution, setGradeDistribution] = useState<{ grade: string; count: number }[]>([]);
-  const [stats, setStats] = useState({ avg: 0, total: 0, highest: 0, lowest: 100 });
+  const [stats, setStats] = useState({ avg: 0, total: 0, highest: 100, lowest: 0 });
 
   useEffect(() => {
     if (!loading && !user) {
@@ -45,7 +45,7 @@ export default function Analytics() {
         // Score data per assignment
         const assignmentScores = assignments.slice(0, 6).map(a => {
           const assignmentSubs = subs.filter(s => s.assignment_id === a.id);
-          const avg = assignmentSubs.length > 0 
+          const avg = assignmentSubs.length > 0
             ? Math.round(assignmentSubs.reduce((acc, s) => acc + (s.final_score || 0), 0) / assignmentSubs.length)
             : 0;
           return { name: a.title.length > 12 ? a.title.substring(0, 12) + '...' : a.title, score: avg };
@@ -54,7 +54,7 @@ export default function Analytics() {
 
         // Grade distribution
         const grades = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-        let total = 0, highest = 0, lowest = 100;
+        let total = 0, highest = 100, lowest = 0;
         subs.forEach(s => {
           const score = s.final_score || 0;
           total += score;
@@ -152,16 +152,16 @@ export default function Analytics() {
                     <AreaChart data={scoreData}>
                       <defs>
                         <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(var(--accent))" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="hsl(var(--accent))" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="hsl(var(--accent))" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="hsl(var(--accent))" stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                       <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
                       <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} domain={[0, 100]} />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
                           border: '1px solid hsl(var(--border))',
                           borderRadius: '8px'
                         }}
@@ -199,9 +199,9 @@ export default function Analytics() {
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                       <XAxis dataKey="grade" stroke="hsl(var(--muted-foreground))" fontSize={12} />
                       <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))', 
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
                           border: '1px solid hsl(var(--border))',
                           borderRadius: '8px'
                         }}

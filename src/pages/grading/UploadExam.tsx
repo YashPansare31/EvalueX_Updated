@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,28 +9,27 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Upload, FileUp, Loader2, FileText, X, CheckCircle2,
-  Plus, Trash2, GripVertical, Save, BookOpen
+  Upload, Loader2, FileText, X,
+  Plus, Trash2, GripVertical, Save, BookOpen, Users,
+  Check
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import ReactQuill from 'react-quill';
-import 'react-quill/dist/quill.snow.css';
 
 interface Question {
   id: string;
   text: string;
   points: number;
-  modelAnswer: string;
+  modelAnswer?: string;
 }
 
-interface UploadedFile {
+
+interface Class {
   id: string;
   name: string;
-  size: number;
-  type: string;
-  status: 'uploading' | 'complete' | 'error';
 }
 
 export default function UploadExam() {
@@ -41,84 +40,68 @@ export default function UploadExam() {
   const [examTitle, setExamTitle] = useState('');
   const [examDescription, setExamDescription] = useState('');
   const [maxScore, setMaxScore] = useState(100);
-  const [rubricContent, setRubricContent] = useState('');
   const [questions, setQuestions] = useState<Question[]>([
-    { id: '1', text: '', points: 10, modelAnswer: '' }
+    { id: '1', text: '', points: 10 }
   ]);
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isExtractingQuestions, setIsExtractingQuestions] = useState(false);
+  const [isExtractingModelAnswers, setIsExtractingModelAnswers] = useState(false);
+  const [allClasses, setAllClasses] = useState<Class[]>([]);
+  const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
+  const [loadingClasses, setLoadingClasses] = useState(true);
+  const [rubricsList, setRubricsList] = useState<any[]>([]);
+  const [selectedRubricId, setSelectedRubricId] = useState('');
+  const [loadingRubrics, setLoadingRubrics] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
       navigate('/login');
+    } else if (user) {
+      fetchClasses();
+      fetchRubrics();
     }
   }, [user, loading, navigate]);
 
-  // Drag and drop handlers
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    handleFiles(files);
-  }, []);
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const files = Array.from(e.target.files);
-      handleFiles(files);
+  const fetchRubrics = async () => {
+    try {
+      setLoadingRubrics(true);
+      const { data, error } = await supabase
+        .from('rubrics')
+        .select('*')
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false });
+        
+      if (error) throw error;
+      setRubricsList(data || []);
+    } catch (error) {
+      console.error('Error fetching rubrics:', error);
+    } finally {
+      setLoadingRubrics(false);
     }
   };
 
-  const handleFiles = (files: File[]) => {
-    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-
-    files.forEach(file => {
-      if (!validTypes.includes(file.type)) {
-        toast.error(`${file.name} is not a supported file type`);
-        return;
-      }
-
-      const newFile: UploadedFile = {
-        id: crypto.randomUUID(),
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        status: 'uploading'
-      };
-
-      setUploadedFiles(prev => [...prev, newFile]);
-
-      // Simulate upload - in production, this would upload to storage
-      setTimeout(() => {
-        setUploadedFiles(prev =>
-          prev.map(f => f.id === newFile.id ? { ...f, status: 'complete' } : f)
-        );
-      }, 1500);
-    });
+  const fetchClasses = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('classes')
+        .select('id, name')
+        .order('name');
+      
+      if (error) throw error;
+      setAllClasses(data || []);
+    } catch (error) {
+      console.error('Error fetching classes:', error);
+    } finally {
+      setLoadingClasses(false);
+    }
   };
 
-  const removeFile = (id: string) => {
-    setUploadedFiles(prev => prev.filter(f => f.id !== id));
-  };
 
   // Question handlers
   const addQuestion = () => {
     setQuestions(prev => [
       ...prev,
-      { id: crypto.randomUUID(), text: '', points: 10, modelAnswer: '' }
+      { id: crypto.randomUUID(), text: '', points: 10 }
     ]);
   };
 
@@ -172,13 +155,12 @@ export default function UploadExam() {
         const newQuestions = data.questions.map((q: any) => ({
           id: crypto.randomUUID(),
           text: q.text || '',
-          points: q.points || 10,
-          modelAnswer: q.modelAnswer || ''
+          points: q.points || 10
         }));
 
         // Remove empty first question if replacing it
         setQuestions(prev => {
-          if (prev.length === 1 && prev[0].text === '' && prev[0].modelAnswer === '') {
+          if (prev.length === 1 && prev[0].text === '') {
             return newQuestions;
           }
           return [...prev, ...newQuestions];
@@ -193,6 +175,70 @@ export default function UploadExam() {
       toast.error(error.message || 'Error parsing PDF');
     } finally {
       setIsExtractingQuestions(false);
+      // Reset input
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleModelAnswersPdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
+      toast.error('Please upload a valid PDF file');
+      return;
+    }
+
+    if (questions.length === 0 || (questions.length === 1 && questions[0].text === '')) {
+      toast.error('Please add or extract questions first');
+      return;
+    }
+
+    setIsExtractingModelAnswers(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      // We pass the current questions array to Gemini so it knows what to map answers to
+      formData.append('questions', JSON.stringify(questions));
+
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+
+      const response = await fetch('http://localhost:3001/api/extract-model-answers-pdf', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to extract model answers');
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.modelAnswers && data.modelAnswers.length > 0) {
+        setQuestions(prev => {
+          return prev.map(q => {
+            // Find the model answer that matches this question's text
+            const match = data.modelAnswers.find((ma: any) => ma.question_text === q.text);
+            if (match && match.model_answer) {
+              return { ...q, modelAnswer: match.model_answer };
+            }
+            return q;
+          });
+        });
+        toast.success(`Successfully extracted model answers`);
+      } else {
+        toast.error('No model answers were mapped from the PDF');
+      }
+    } catch (error: any) {
+      console.error('Extraction error:', error);
+      toast.error(error.message || 'Error parsing Model Answers PDF');
+    } finally {
+      setIsExtractingModelAnswers(false);
       // Reset input
       if (e.target) e.target.value = '';
     }
@@ -223,6 +269,20 @@ export default function UploadExam() {
 
       if (assignmentError) throw assignmentError;
 
+      // Attach classes
+      if (selectedClassIds.length > 0) {
+        const classMappings = selectedClassIds.map(classId => ({
+          assignment_id: assignment.id,
+          class_id: classId
+        }));
+
+        const { error: classMappingError } = await supabase
+          .from('assignment_classes')
+          .insert(classMappings);
+
+        if (classMappingError) throw classMappingError;
+      }
+
       // Save questions if any have content
       const validQuestions = questions.filter(q => q.text.trim());
       if (validQuestions.length > 0) {
@@ -234,52 +294,70 @@ export default function UploadExam() {
           question_order: index
         }));
 
-        const { error: questionsError } = await supabase
+        const { data: insertedQuestions, error: questionsError } = await supabase
           .from('exam_questions')
-          .insert(questionsToInsert);
+          .insert(questionsToInsert)
+          .select();
 
         if (questionsError) throw questionsError;
+
+        // Save to model_answers table for the QCP pipeline
+        const modelAnswersToInsert = validQuestions.map((q, i) => {
+          if (!q.modelAnswer?.trim()) return null;
+          // Find the corresponding inserted question
+          const insertedQ = insertedQuestions?.find(iq => iq.question_text === q.text && iq.question_order === i);
+          if (!insertedQ) return null;
+          return {
+            assignment_id: assignment.id,
+            question_id: insertedQ.id,
+            answer_text: q.modelAnswer.trim()
+          };
+        }).filter(Boolean);
+
+        if (modelAnswersToInsert.length > 0) {
+          const { error: maError } = await supabase
+            .from('model_answers')
+            .insert(modelAnswersToInsert);
+          
+          if (maError) throw maError;
+        }
       }
 
-      // Save rubric if content exists
-      if (rubricContent.trim()) {
-        const { error: rubricError } = await supabase
-          .from('exam_rubrics')
-          .insert({
-            assignment_id: assignment.id,
-            rubric_content: rubricContent
-          });
+      // Save rubric link if selected
+      if (selectedRubricId) {
+        const selectedRubric = rubricsList.find(r => r.id === selectedRubricId);
+        if (selectedRubric) {
+          const { error: rubricError } = await supabase
+            .from('exam_rubrics')
+            .insert({
+              assignment_id: assignment.id,
+              rubric_content: selectedRubric.content || ''
+            });
 
-        if (rubricError) throw rubricError;
+          if (rubricError) throw rubricError;
+        }
       }
 
       toast.success('Exam template saved successfully!');
       navigate('/dashboard');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving exam:', error);
-      toast.error('Failed to save exam template');
+      toast.error(error.message || 'Failed to save exam template');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  const toggleClass = (classId: string) => {
+    setSelectedClassIds(prev => 
+      prev.includes(classId) 
+        ? prev.filter(id => id !== classId)
+        : [...prev, classId]
+    );
   };
 
-  // Quill editor modules
-  const quillModules = {
-    toolbar: [
-      [{ 'header': [1, 2, 3, false] }],
-      ['bold', 'italic', 'underline', 'strike'],
-      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-      [{ 'indent': '-1' }, { 'indent': '+1' }],
-      ['link'],
-      ['clean']
-    ],
-  };
+
+
 
   if (loading) {
     return (
@@ -301,7 +379,7 @@ export default function UploadExam() {
         >
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-1">Exam Setup</h1>
-            <p className="text-muted-foreground">Create exam templates with questions, rubrics, and model answers</p>
+            <p className="text-muted-foreground">Create exam templates with questions and rubrics</p>
           </div>
           <Button onClick={handleSave} disabled={isSaving} className="gap-2">
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -327,10 +405,6 @@ export default function UploadExam() {
               <TabsTrigger value="rubric" className="gap-2">
                 <FileText className="h-4 w-4" />
                 Rubric
-              </TabsTrigger>
-              <TabsTrigger value="upload" className="gap-2">
-                <Upload className="h-4 w-4" />
-                Upload Files
               </TabsTrigger>
             </TabsList>
 
@@ -368,13 +442,89 @@ export default function UploadExam() {
                       <div className="space-y-2">
                         <Label htmlFor="maxScore">Maximum Score</Label>
                         <Input
-                          id="maxScore"
                           type="number"
-                          min={1}
-                          value={maxScore}
-                          onChange={(e) => setMaxScore(parseInt(e.target.value) || 100)}
+                          id="maxScore"
+                          placeholder="100"
+                          value={maxScore || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMaxScore(val === '' ? 0 : parseInt(val));
+                          }}
                         />
                       </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <Label className="text-base font-semibold flex items-center gap-2">
+                        <Users className="h-4 w-4 text-accent" />
+                        Attach to Classes
+                      </Label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {loadingClasses ? (
+                          <div className="col-span-full flex items-center justify-center py-4">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : allClasses.length > 0 ? (
+                          allClasses.map((cls) => (
+                            <div
+                              key={cls.id}
+                              onClick={() => toggleClass(cls.id)}
+                              className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                                selectedClassIds.includes(cls.id)
+                                  ? 'border-accent bg-accent/5 ring-1 ring-accent/20'
+                                  : 'border-border hover:border-accent/40 bg-card'
+                              }`}
+                            >
+                              <Checkbox
+                                id={`class-${cls.id}`}
+                                checked={selectedClassIds.includes(cls.id)}
+                                onCheckedChange={() => toggleClass(cls.id)}
+                                className="border-accent data-[state=checked]:bg-accent"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <Label
+                                htmlFor={`class-${cls.id}`}
+                                className="flex-1 font-medium cursor-pointer"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {cls.name}
+                              </Label>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="col-span-full p-4 rounded-lg border border-dashed text-center">
+                            <p className="text-sm text-muted-foreground mb-2">No classes found</p>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="text-accent underline"
+                              onClick={() => navigate('/classes')}
+                            >
+                              Create your first class in the Classes tab
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                      {selectedClassIds.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <span className="text-xs text-muted-foreground w-full">Selected:</span>
+                          {selectedClassIds.map(id => {
+                            const cls = allClasses.find(c => c.id === id);
+                            return cls ? (
+                              <Badge key={id} variant="secondary" className="bg-accent/10 text-accent border-accent/20">
+                                {cls.name}
+                                <X 
+                                  className="h-3 w-3 ml-1 cursor-pointer hover:text-destructive" 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleClass(id);
+                                  }} 
+                                />
+                              </Badge>
+                            ) : null;
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -386,7 +536,7 @@ export default function UploadExam() {
               <Card>
                 <CardHeader>
                   <CardTitle>Exam Questions</CardTitle>
-                  <CardDescription>Add questions with point values and model answers</CardDescription>
+                  <CardDescription>Add questions with point values</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <AnimatePresence mode="popLayout">
@@ -418,19 +568,22 @@ export default function UploadExam() {
                                 <Label>Points</Label>
                                 <Input
                                   type="number"
-                                  min={1}
-                                  value={question.points}
-                                  onChange={(e) => updateQuestion(question.id, 'points', parseInt(e.target.value) || 1)}
+                                  placeholder="10"
+                                  value={question.points || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    updateQuestion(question.id, 'points', val === '' ? 0 : parseInt(val));
+                                  }}
                                 />
                               </div>
                             </div>
                             <div className="space-y-2">
-                              <Label>Model Answer</Label>
+                              <Label>Model Answer (Optional)</Label>
                               <Textarea
-                                placeholder="Enter the expected/model answer..."
-                                value={question.modelAnswer}
+                                placeholder="Enter the expected model answer..."
+                                value={question.modelAnswer || ''}
                                 onChange={(e) => updateQuestion(question.id, 'modelAnswer', e.target.value)}
-                                rows={3}
+                                rows={2}
                               />
                             </div>
                           </div>
@@ -448,7 +601,7 @@ export default function UploadExam() {
                     ))}
                   </AnimatePresence>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <input
                         id="questions-pdf-upload"
@@ -457,9 +610,22 @@ export default function UploadExam() {
                         className="hidden"
                         onChange={handleQuestionsPdfUpload}
                       />
-                      <Button variant="outline" onClick={() => document.getElementById('questions-pdf-upload')?.click()} disabled={isExtractingQuestions} className="w-full gap-2">
+                      <Button variant="outline" onClick={() => document.getElementById('questions-pdf-upload')?.click()} disabled={isExtractingQuestions || isExtractingModelAnswers} className="w-full gap-2">
                         {isExtractingQuestions ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                        {isExtractingQuestions ? 'Extracting...' : 'Upload Questions from PDF'}
+                        {isExtractingQuestions ? 'Extracting...' : 'Upload Questions (PDF)'}
+                      </Button>
+                    </div>
+                    <div>
+                      <input
+                        id="model-answers-pdf-upload"
+                        type="file"
+                        accept=".pdf"
+                        className="hidden"
+                        onChange={handleModelAnswersPdfUpload}
+                      />
+                      <Button variant="outline" onClick={() => document.getElementById('model-answers-pdf-upload')?.click()} disabled={isExtractingModelAnswers || isExtractingQuestions} className="w-full gap-2">
+                        {isExtractingModelAnswers ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        {isExtractingModelAnswers ? 'Extracting...' : 'Upload Model Answers (PDF)'}
                       </Button>
                     </div>
                     <Button variant="outline" onClick={addQuestion} className="w-full gap-2">
@@ -476,115 +642,68 @@ export default function UploadExam() {
               <Card>
                 <CardHeader>
                   <CardTitle>Grading Rubric</CardTitle>
-                  <CardDescription>Define your grading criteria using the rich text editor</CardDescription>
+                  <CardDescription>Select a grading rubric from your previously uploaded rubrics</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="min-h-[400px] border border-border rounded-lg overflow-hidden">
-                    <ReactQuill
-                      theme="snow"
-                      value={rubricContent}
-                      onChange={setRubricContent}
-                      modules={quillModules}
-                      placeholder="Create your grading rubric here...
-
-Example:
-- Excellent (90-100%): Complete and accurate answer with clear reasoning
-- Good (75-89%): Mostly correct with minor errors
-- Satisfactory (60-74%): Partial understanding demonstrated
-- Needs Improvement (below 60%): Significant gaps in understanding"
-                      className="h-[350px]"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* Upload Tab */}
-            <TabsContent value="upload" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Upload Exam Files</CardTitle>
-                  <CardDescription>Upload exam papers, answer sheets, or supporting documents</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div
-                    className={`border-2 border-dashed rounded-lg p-12 text-center transition-all cursor-pointer ${isDragging
-                        ? 'border-accent bg-accent/5'
-                        : 'border-border hover:border-accent/50'
-                      }`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={() => document.getElementById('file-input')?.click()}
-                  >
-                    <input
-                      id="file-input"
-                      type="file"
-                      multiple
-                      accept=".pdf,.docx,.txt"
-                      className="hidden"
-                      onChange={handleFileInput}
-                    />
-                    <motion.div
-                      animate={{ scale: isDragging ? 1.05 : 1 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <FileUp className={`h-12 w-12 mx-auto mb-4 ${isDragging ? 'text-accent' : 'text-muted-foreground'}`} />
-                      <p className="text-lg font-medium text-foreground mb-2">
-                        {isDragging ? 'Drop files here' : 'Drag & drop files here'}
-                      </p>
-                      <p className="text-sm text-muted-foreground mb-4">or click to browse</p>
-                      <p className="text-xs text-muted-foreground">Supports PDF, DOCX, TXT files (max 10MB each)</p>
-                    </motion.div>
-                  </div>
-
-                  {/* Uploaded files list */}
-                  <AnimatePresence>
-                    {uploadedFiles.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="space-y-2"
-                      >
-                        <Label>Uploaded Files</Label>
-                        <div className="space-y-2">
-                          {uploadedFiles.map(file => (
-                            <motion.div
-                              key={file.id}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: 20 }}
-                              className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg"
-                            >
-                              <FileText className="h-8 w-8 text-accent" />
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm truncate">{file.name}</p>
-                                <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
-                              </div>
-                              {file.status === 'uploading' && (
-                                <Loader2 className="h-5 w-5 animate-spin text-accent" />
-                              )}
-                              {file.status === 'complete' && (
-                                <CheckCircle2 className="h-5 w-5 text-green-500" />
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeFile(file.id)}
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  <div className="space-y-4">
+                    <Label>Select Rubric</Label>
+                    {loadingRubrics ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Loading rubrics...
+                      </div>
+                    ) : rubricsList.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {rubricsList.map((rubric) => (
+                          <div
+                            key={rubric.id}
+                            onClick={() => setSelectedRubricId(rubric.id)}
+                            className={`flex items-start space-x-3 p-4 rounded-lg border cursor-pointer transition-all ${
+                              selectedRubricId === rubric.id
+                                ? 'border-accent bg-accent/5 ring-1 ring-accent/20'
+                                : 'border-border hover:border-accent/40 bg-card'
+                            }`}
+                          >
+                            <Checkbox
+                              id={`rubric-${rubric.id}`}
+                              checked={selectedRubricId === rubric.id}
+                              onCheckedChange={() => setSelectedRubricId(rubric.id)}
+                              className="border-accent data-[state=checked]:bg-accent mt-0.5"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <div className="flex-1">
+                              <Label
+                                htmlFor={`rubric-${rubric.id}`}
+                                className="font-medium cursor-pointer block"
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </motion.div>
-                          ))}
-                        </div>
-                      </motion.div>
+                                {rubric.name}
+                              </Label>
+                              <a 
+                                href={rubric.file_url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-xs text-accent hover:underline mt-1 inline-block"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                View PDF
+                              </a>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 border border-dashed rounded-lg bg-muted/20 text-center">
+                        <p className="text-sm text-muted-foreground mb-2">No rubrics found</p>
+                        <Button variant="link" onClick={() => navigate('/grading/rubrics')} className="text-accent h-auto p-0">
+                          Go to Rubrics tab to upload one
+                        </Button>
+                      </div>
                     )}
-                  </AnimatePresence>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
+
           </Tabs>
         </motion.div>
       </main>

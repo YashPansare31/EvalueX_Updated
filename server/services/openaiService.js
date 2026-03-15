@@ -20,7 +20,6 @@ async function gradeQuestion({
   questionText,
   maxMarks,
   studentAnswer,
-  modelAnswer = null,
   rubricCriteria = null,
   assignmentContext = '',
 }) {
@@ -45,10 +44,7 @@ ${assignmentContext ? `SUBJECT/COURSE: ${assignmentContext}` : ''}`;
 ${rubricCriteria}`;
   }
 
-  if (modelAnswer) {
-    userMessage += `\n\nMODEL ANSWER (reference only — assess understanding, not match):
-${modelAnswer}`;
-  }
+
 
   userMessage += `\n\nSTUDENT'S ANSWER:
 ${studentAnswer || '[NO ANSWER FOUND]'}
@@ -109,7 +105,6 @@ MAXIMUM SCORE: ${maxScore}`;
     context += `\n\nEXAM QUESTIONS:\n`;
     questions.forEach((q, i) => {
       context += `Q${i + 1} [${q.points} marks]: ${q.question_text}\n`;
-      if (q.model_answer) context += `Expected: ${q.model_answer}\n`;
     });
   }
 

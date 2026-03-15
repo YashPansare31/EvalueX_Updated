@@ -32,6 +32,10 @@ app.use('/api/grade-submission',   require('./routes/gradeSubmission'));
 
 // NEW QCP ENDPOINTS
 app.use('/api/parse-question-paper', require('./routes/parseQuestionPaper'));
+app.use('/api/parse-model-answers',  require('./routes/parseModelAnswers'));
+app.use('/api/extract-questions-pdf', require('./routes/extractQuestionsPdf'));
+app.use('/api/extract-model-answers-pdf', require('./routes/extractModelAnswersPdf'));
+app.use('/api/parse-rubric-pdf',     require('./routes/parseRubricPdf'));
 app.use('/api/extract-answers',      require('./routes/extractAnswers'));
 app.use('/api/grade-question',       require('./routes/gradeQuestion'));
 app.use('/api/aggregate-scores',     require('./routes/aggregateScores'));

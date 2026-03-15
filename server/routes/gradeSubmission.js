@@ -30,7 +30,7 @@ router.post('/', async (req, res) => {
     // --- Fetch exam questions with rubrics and model answers ---
     const { data: questions } = await supabase
       .from('exam_questions')
-      .select('id, question_text, model_answer, points, question_order, optional_group')
+      .select('id, question_text, points, question_order, optional_group')
       .eq('assignment_id', assignmentId)
       .order('question_order', { ascending: true });
 
@@ -58,16 +58,6 @@ router.post('/', async (req, res) => {
         const question = questions.find(q => q.id === sa.question_id);
         if (!question) return null;
 
-        // Find rubric content — first check model_answers table, then fall back to exam_questions.model_answer
-        const { data: modelAnswerRow } = await supabase
-          .from('model_answers')
-          .select('answer_text')
-          .eq('assignment_id', assignmentId)
-          .eq('question_id', question.id)
-          .maybeSingle();
-
-        const modelAnswer = modelAnswerRow?.answer_text || question.model_answer || null;
-
         // Use assignment-level rubric as fallback (concatenated)
         const rubricText = rubrics && rubrics.length > 0
           ? rubrics.map(r => r.rubric_content).join('\n')
@@ -79,7 +69,6 @@ router.post('/', async (req, res) => {
             questionText: question.question_text,
             maxMarks: question.points,
             studentAnswer: sa.extracted_text || '[NO ANSWER FOUND]',
-            modelAnswer,
             rubricCriteria: rubricText,
             assignmentContext: assignment.title,
           });

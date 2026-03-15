@@ -41,13 +41,7 @@ router.post('/', async (req, res) => {
       .eq('id', assignmentId)
       .single();
 
-    // Fetch model answer if exists
-    const { data: modelAnswerRow } = await supabase
-      .from('model_answers')
-      .select('answer_text')
-      .eq('assignment_id', assignmentId)
-      .eq('question_id', questionId)
-      .maybeSingle();
+
 
     // Fetch rubric
     const { data: rubrics } = await supabase
@@ -60,7 +54,6 @@ router.post('/', async (req, res) => {
       questionText: question.question_text,
       maxMarks: question.points,
       studentAnswer: sa.extracted_text || '[NO ANSWER FOUND]',
-      modelAnswer: modelAnswerRow?.answer_text || question.model_answer || null,
       rubricCriteria: rubrics?.map(r => r.rubric_content).join('\n') || null,
       assignmentContext: assignment?.title || '',
     });

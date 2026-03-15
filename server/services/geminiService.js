@@ -219,13 +219,11 @@ async function extractQuestionsFromPdfText(pdfText) {
 
 RULES:
 - Extract every question along with its points/marks.
-- If there's a model answer or solution provided in the text, extract it. Otherwise leave modelAnswer empty.
 - Return ONLY JSON matching this exact structure:
 [
   {
     "text": "<full text of the question>",
-    "points": <number>,
-    "modelAnswer": "<expected answer if provided, else empty string>"
+    "points": <number>
   }
 ]
 
@@ -244,6 +242,48 @@ ${pdfText}`;
   }
 }
 
+async function extractModelAnswersFromPdfText(pdfText, questions) {
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: 'application/json',
+    },
+  });
+
+  const questionList = questions.map(q => `- ${q.text}`).join('\n');
+
+  const prompt = `You are an academic document parser. Extract model answers for the following exam questions from the provided model answer sheet text.
+
+QUESTIONS:
+${questionList}
+
+RULES:
+- Map each question to its corresponding model answer found in the text.
+- If an exact answer is not found, leave that model answer blank.
+- Return ONLY JSON matching this exact structure:
+[
+  {
+    "question_text": "<text of the question>",
+    "model_answer": "<extracted model answer>"
+  }
+]
+
+MODEL ANSWER SHEET TEXT:
+${pdfText}`;
+
+  const result = await model.generateContent(prompt);
+  const text = result.response.text();
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error('Gemini did not return valid JSON array for model answers');
+  }
+}
+
 module.exports = {
   parseQuestionPaperStructure,
   detectAnswerLayout,
@@ -251,4 +291,5 @@ module.exports = {
   extractTextFromImage,
   flattenQuestions,
   extractQuestionsFromPdfText,
+  extractModelAnswersFromPdfText,
 };

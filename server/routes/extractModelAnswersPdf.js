@@ -1,20 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { extractQuestionsFromPdfText } = require('../services/geminiService');
+const { extractModelAnswersFromPdfText } = require('../services/geminiService');
+const pdf = require('pdf-parse');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-const pdf = require('pdf-parse');
-
-// POST /api/extract-questions-pdf
-// BACKWARD COMPATIBLE — preserves existing frontend contract in UploadExam.tsx
-// Accepts: multipart/form-data with 'file' field (PDF)
-// Returns: { success: true, questions: [...] }
+// POST /api/extract-model-answers-pdf
+// Accepts: multipart/form-data with 'file' field (PDF) and 'questions' field (JSON string)
+// Returns: { success: true, modelAnswers: [...] }
 router.post('/', upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No PDF file uploaded' });
+        }
+
+        const questionsStr = req.body.questions;
+        if (!questionsStr) {
+            return res.status(400).json({ error: 'No questions provided mapping' });
+        }
+
+        let questions = [];
+        try {
+            questions = JSON.parse(questionsStr);
+        } catch (e) {
+            return res.status(400).json({ error: 'Invalid questions JSON' });
         }
 
         if (!process.env.GEMINI_API_KEY) {
@@ -35,20 +45,14 @@ router.post('/', upload.single('file'), async (req, res) => {
             return res.status(400).json({ error: 'Appears to be an empty or unreadable PDF' });
         }
 
-        let questionsArray = await extractQuestionsFromPdfText(pdfText);
-
-        // Remove modelAnswer from the extracted questions as per user request
-        questionsArray = questionsArray.map(q => {
-            const { modelAnswer, ...rest } = q;
-            return rest;
-        });
+        const modelAnswers = await extractModelAnswersFromPdfText(pdfText, questions);
 
         return res.json({
             success: true,
-            questions: questionsArray,
+            modelAnswers,
         });
     } catch (error) {
-        console.error('[extract-questions-pdf] Error:', error.message);
+        console.error('[extract-model-answers-pdf] Error:', error.message);
 
         if (error.message?.includes('API key')) {
             return res.status(500).json({ error: 'Invalid Gemini API key' });

@@ -1,7 +1,7 @@
 /**
- * API Client for EvalueX Backend Server
- * Replaces supabase.functions.invoke() calls
- */
+* API Client for EvalueX Backend Server
+* Replaces supabase.functions.invoke() calls
+*/
 
 import { supabase } from './supabase/client';
 
@@ -96,4 +96,108 @@ export async function healthCheck() {
   } catch {
     return false;
   }
+}
+
+export async function parseQuestionPaper(
+  assignmentId: string,
+  images: string[],
+  mimeType: string = 'image/jpeg'
+) {
+  const token = await getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/parse-question-paper`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ assignmentId, images, mimeType }),
+  });
+  if (!response.ok) throw new Error((await response.json()).error);
+  return response.json();
+}
+
+export async function parseModelAnswers(
+  assignmentId: string,
+  images: string[],
+  mimeType: string = 'image/jpeg'
+) {
+  const token = await getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/parse-model-answers`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ assignmentId, images, mimeType }),
+  });
+  if (!response.ok) throw new Error((await response.json()).error);
+  return response.json();
+}
+
+export async function extractAnswers(
+  submissionId: string,
+  assignmentId: string,
+  pages: string[],
+  mimeType: string = 'image/jpeg'
+) {
+  const token = await getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/extract-answers`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ submissionId, assignmentId, pages, mimeType }),
+  });
+  if (!response.ok) throw new Error((await response.json()).error);
+  return response.json();
+}
+
+export async function regradeSingleQuestion(
+  submissionId: string,
+  questionId: string,
+  assignmentId: string
+) {
+  const token = await getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/grade-question`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ submissionId, questionId, assignmentId }),
+  });
+  if (!response.ok) throw new Error((await response.json()).error);
+  return response.json();
+}
+
+export async function aggregateScores(
+  submissionId: string,
+  assignmentId: string
+) {
+  const token = await getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/aggregate-scores`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ submissionId, assignmentId }),
+  });
+  if (!response.ok) throw new Error((await response.json()).error);
+  return response.json();
+}
+
+export async function fetchAggregateScores(
+  submissionId: string
+) {
+  const token = await getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/aggregate-scores/${submissionId}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) throw new Error((await response.json()).error);
+  return response.json();
 }
