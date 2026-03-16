@@ -49,12 +49,21 @@ router.post('/', async (req, res) => {
       .select('rubric_content')
       .eq('assignment_id', assignmentId);
 
+    // Fetch model answer for this specific question (if available)
+    const { data: modelAnswerRow } = await supabase
+      .from('model_answers')
+      .select('answer_text')
+      .eq('question_id', questionId)
+      .eq('assignment_id', assignmentId)
+      .maybeSingle();
+
     const grade = await gradeQuestion({
       questionLabel: sa.question_label,
       questionText: question.question_text,
       maxMarks: question.points,
       studentAnswer: sa.extracted_text || '[NO ANSWER FOUND]',
       rubricCriteria: rubrics?.map(r => r.rubric_content).join('\n') || null,
+      modelAnswer: modelAnswerRow?.answer_text || null,
       assignmentContext: assignment?.title || '',
     });
 

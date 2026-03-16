@@ -81,7 +81,7 @@ export default function Results() {
 
   const handleDeleteSubmission = async (submissionId: string) => {
     setDeletingId(submissionId);
-    
+
     const { error } = await supabase
       .from('submissions')
       .delete()
@@ -101,7 +101,7 @@ export default function Results() {
     const headers = ['Student Name', 'Assignment', 'Score', 'Max Score', 'Percentage', 'Grade', 'Graded Date'];
     const rows = submissions.map(sub => {
       const percentage = Math.round((sub.final_score || 0) / sub.assignment.max_score * 100);
-      const grade = percentage >= 90 ? 'A' : percentage >= 80 ? 'B' : percentage >= 70 ? 'C' : percentage >= 60 ? 'D' : 'F';
+      const grade = percentage >= 90 ? 'A+' : percentage >= 80 ? 'A' : percentage >= 70 ? 'B' : percentage >= 60 ? 'C' : percentage >= 50 ? 'D' : percentage >= 35 ? 'E' : 'F';
       return [
         sub.student_name,
         sub.assignment.title,
@@ -112,7 +112,7 @@ export default function Results() {
         sub.graded_at ? new Date(sub.graded_at).toLocaleDateString() : ''
       ].join(',');
     });
-    
+
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -135,7 +135,7 @@ export default function Results() {
     doc.setFont('helvetica', 'bold');
     doc.text('Results Report', margin, yPos);
     yPos += 10;
-    
+
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     doc.text(`Generated on ${new Date().toLocaleDateString()} | Total: ${submissions.length} submissions`, margin, yPos);
@@ -163,7 +163,7 @@ export default function Results() {
       }
 
       const percentage = Math.round((sub.final_score || 0) / sub.assignment.max_score * 100);
-      const grade = percentage >= 90 ? 'A' : percentage >= 80 ? 'B' : percentage >= 70 ? 'C' : percentage >= 60 ? 'D' : 'F';
+      const grade = percentage >= 90 ? 'A+' : percentage >= 80 ? 'A' : percentage >= 70 ? 'B' : percentage >= 60 ? 'C' : percentage >= 50 ? 'D' : percentage >= 35 ? 'E' : 'F';
 
       doc.text(sub.student_name.substring(0, 15), margin, yPos);
       doc.text(sub.assignment.title.substring(0, 25), margin + 40, yPos);
@@ -241,14 +241,14 @@ export default function Results() {
                   <TableBody>
                     {submissions.map((sub) => {
                       const percentage = Math.round((sub.final_score || 0) / sub.assignment.max_score * 100);
-                      const grade = percentage >= 90 ? 'A' : percentage >= 80 ? 'B' : percentage >= 70 ? 'C' : percentage >= 60 ? 'D' : 'F';
+                      const grade = percentage >= 90 ? 'A+' : percentage >= 80 ? 'A' : percentage >= 70 ? 'B' : percentage >= 60 ? 'C' : percentage >= 50 ? 'D' : percentage >= 35 ? 'E' : 'F';
                       return (
                         <TableRow key={sub.id}>
                           <TableCell className="font-medium">{sub.student_name}</TableCell>
                           <TableCell>{sub.assignment.title}</TableCell>
                           <TableCell>{sub.final_score}/{sub.assignment.max_score}</TableCell>
                           <TableCell>
-                            <Badge variant={grade === 'A' || grade === 'B' ? 'default' : grade === 'C' ? 'secondary' : 'destructive'}>
+                            <Badge variant={['A+', 'A', 'B'].includes(grade) ? 'default' : ['C', 'D'].includes(grade) ? 'secondary' : 'destructive'}>
                               {grade}
                             </Badge>
                           </TableCell>

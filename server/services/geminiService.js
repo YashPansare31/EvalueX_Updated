@@ -7,6 +7,22 @@ function stripBase64Prefix(str) {
   return str.replace(/^data:image\/\w+;base64,/, '');
 }
 
+async function callGeminiWithRetry(fn, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.message.includes('429') && attempt < maxRetries) {
+        const waitTime = attempt * 12000; // 12s, 24s, 36s
+        console.log(`Rate limited, waiting ${waitTime / 1000}s before retry ${attempt}/${maxRetries}`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 /**
  * Extract structured question paper schema from image(s).
  * Returns parsed JSON with full question tree.
@@ -84,10 +100,10 @@ async function detectAnswerLayout(base64Pages, questions, mimeType = 'image/jpeg
     },
   });
 
-  const imageParts = base64Pages.map((b64, idx) => ({
-    inlineData: { data: stripBase64Prefix(b64), mimeType },
-    text: `[PAGE ${idx + 1}]`,
-  }));
+  const imageParts = base64Pages.flatMap((b64, idx) => [
+    { text: `[PAGE ${idx + 1}]` },
+    { inlineData: { data: stripBase64Prefix(b64), mimeType } }
+  ]);
 
   const flatQuestions = flattenQuestions(questions);
   const questionList = flatQuestions
@@ -166,7 +182,7 @@ INSTRUCTIONS:
 
 Return the extracted answer text directly, no JSON wrapper, no explanation.`;
 
-  const result = await model.generateContent([prompt, ...imageParts]);
+  const result = await callGeminiWithRetry(() => model.generateContent([prompt, ...imageParts]));
   return result.response.text().trim();
 }
 

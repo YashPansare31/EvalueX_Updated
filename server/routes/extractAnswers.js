@@ -3,6 +3,13 @@ const router = express.Router();
 const supabase = require('../services/supabaseClient');
 const { detectAnswerLayout, extractSingleAnswerText, flattenQuestions } = require('../services/geminiService');
 
+function sanitizeExtractedText(text) {
+  if (!text) return text;
+  // Regex to remove the recurring college header with optional trailing numbers (relaxed to account for slight OCR variations)
+  const regex = /AISSMS\s+INSTITUTE\s+OF[\s\S]*?Pune\s+University\s*\d*/gi;
+  return text.replace(regex, '').trim();
+}
+
 // POST /api/extract-answers
 // Accepts: { submissionId, assignmentId, pages: string[] (base64, one per page), mimeType? }
 // Action:
@@ -66,12 +73,14 @@ router.post('/', async (req, res) => {
       const pagesToUse = relevantPages.length > 0 ? relevantPages : pages;
 
       try {
-        const extractedText = await extractSingleAnswerText(
+        let extractedText = await extractSingleAnswerText(
           pagesToUse,
           question.question_text,
           mapEntry.question_label,
           mimeType
         );
+
+        extractedText = sanitizeExtractedText(extractedText);
 
         return {
           submission_id: submissionId,
@@ -122,7 +131,7 @@ router.post('/', async (req, res) => {
 
   } catch (err) {
     console.error('[extract-answers] Fatal error:', err.message);
-    await supabase.from('submissions').update({ grading_status: 'pending' }).eq('id', submissionId).catch(() => {});
+    await supabase.from('submissions').update({ grading_status: 'pending' }).eq('id', submissionId).catch(() => { });
     return res.status(500).json({ error: 'Answer extraction failed', details: err.message });
   }
 });

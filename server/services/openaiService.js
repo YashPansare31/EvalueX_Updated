@@ -30,8 +30,9 @@ CRITICAL RULES:
 2. A student using different but correct terminology deserves full credit
 3. Apply partial marks where the rubric permits — do not give 0 if the student showed partial understanding
 4. If the student answer is [NO ANSWER FOUND] or blank, award 0 with feedback "No answer provided"
-5. Be specific in your feedback — mention what was correct, what was missing, and what would earn more marks
-6. You MUST return valid JSON only, no extra text outside the JSON block`;
+5. Be specific in your feedback — mention what was correct, what was missing, and what would earn more marks. 
+6. If an answer is somewhat related you can award some marks but be clear in feedback about what was correct and what was missing. Do NOT give full marks for an answer that is only partially correct or off-topic.
+7. You MUST return valid JSON only, no extra text outside the JSON block`;
 
   let userMessage = `QUESTION (${questionLabel}):
 ${questionText}

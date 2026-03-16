@@ -31,7 +31,7 @@ export default function Analytics() {
   const fetchAnalytics = async () => {
     const { data: assignments } = await supabase
       .from('assignments')
-      .select('id, title')
+      .select('id, title, max_score')
       .eq('user_id', user?.id);
 
     if (assignments && assignments.length > 0) {
@@ -45,26 +45,32 @@ export default function Analytics() {
         // Score data per assignment
         const assignmentScores = assignments.slice(0, 6).map(a => {
           const assignmentSubs = subs.filter(s => s.assignment_id === a.id);
+          const max = a.max_score || 100;
           const avg = assignmentSubs.length > 0
-            ? Math.round(assignmentSubs.reduce((acc, s) => acc + (s.final_score || 0), 0) / assignmentSubs.length)
+            ? Math.round((assignmentSubs.reduce((acc, s) => acc + (s.final_score || 0), 0) / assignmentSubs.length) / max * 100)
             : 0;
           return { name: a.title.length > 12 ? a.title.substring(0, 12) + '...' : a.title, score: avg };
         }).filter(a => a.score > 0);
         setScoreData(assignmentScores);
 
         // Grade distribution
-        const grades = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-        let total = 0, highest = 100, lowest = 0;
+        const grades = { 'A+': 0, 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0, 'F': 0 };
+        let total = 0, highest = 0, lowest = 100;
         subs.forEach(s => {
-          const score = s.final_score || 0;
-          total += score;
-          if (score > highest) highest = score;
-          if (score < lowest) lowest = score;
-          if (score >= 90) grades.A++;
-          else if (score >= 80) grades.B++;
-          else if (score >= 70) grades.C++;
-          else if (score >= 60) grades.D++;
-          else grades.F++;
+          const a = assignments.find(assign => assign.id === s.assignment_id);
+          const max = a?.max_score || 100;
+          const percentage = Math.round((s.final_score || 0) / max * 100);
+          total += percentage;
+          if (percentage > highest) highest = percentage;
+          if (percentage < lowest) lowest = percentage;
+
+          if (percentage >= 90) grades['A+']++;
+          else if (percentage >= 80) grades['A']++;
+          else if (percentage >= 70) grades['B']++;
+          else if (percentage >= 60) grades['C']++;
+          else if (percentage >= 50) grades['D']++;
+          else if (percentage >= 35) grades['E']++;
+          else grades['F']++;
         });
 
         setGradeDistribution(Object.entries(grades).map(([grade, count]) => ({ grade, count })));
@@ -72,7 +78,7 @@ export default function Analytics() {
           avg: Math.round(total / subs.length),
           total: subs.length,
           highest,
-          lowest
+          lowest: highest === 0 && lowest === 100 ? 0 : lowest
         });
       }
     }

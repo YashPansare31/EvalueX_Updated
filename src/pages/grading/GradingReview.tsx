@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Loader2, ChevronDown, ChevronRight, CheckCircle, Edit2, Save, X, RefreshCw, AlertTriangle, Trash2, Download, FileText } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronRight, CheckCircle, Edit2, Save, X, RefreshCw, AlertTriangle, Trash2, Download, FileText, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { gradeSubmission, aggregateScores, regradeSingleQuestion } from '@/integrations/api-client';
@@ -25,6 +25,25 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+
+// Helper to format unstructured student answers into readable layouts
+function formatStudentText(text: string | null | undefined): string {
+  if (!text) return '';
+
+  // 1. Remove unwanted college boilerplate
+  let formatted = text.replace(/AISSMS\s+INSTITUTE\s+OF[\s\S]*?Pune\s+University\s*\d*/gi, '');
+
+  // 2. Erase single newlines from OCR bounding boxes, but preserve double-newline paragraphs
+  formatted = formatted.replace(/([^\n])\n(?!\n)/g, '$1 ');
+
+  // 3. Force distinct paragraphs for new 'Question N' markers
+  formatted = formatted.replace(/(Q\.\s*\d+(?:\s*[A-Z])?|Question\s*\d+|Q\s*\d+)/gi, '\n\n$1');
+
+  // 4. Create bullet indents for roman numerals and standard lists/letters
+  formatted = formatted.replace(/(\s+)([ivx]{1,4}[.)]|[a-z]\)|\d+[.)])/gi, '\n  $2');
+
+  return formatted.trim();
+}
 
 interface QuestionGrade {
   id: string;
@@ -64,7 +83,7 @@ export default function GradingReview() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  
+
   // Specific question editing state
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [questionEditScore, setQuestionEditScore] = useState<number>(0);
@@ -109,7 +128,7 @@ export default function GradingReview() {
           .from('question_grades')
           .select('*')
           .in('submission_id', subs.map(s => s.id));
-          
+
         const { data: sa } = await supabase
           .from('submission_answers')
           .select('submission_id, question_id, extracted_text')
@@ -167,17 +186,17 @@ export default function GradingReview() {
       if (error) throw error;
 
       toast.success('Question grade updated.');
-      
+
       // Re-aggregate and retrieve updated final score
       const aggRes = await aggregateScores(sub.id, sub.assignment_id);
-      
+
       setSubmissions(subs => subs.map(s => {
         if (s.id === sub.id) {
           return {
             ...s,
             ai_score: aggRes.final_score,
             final_score: aggRes.final_score, // keep synchronized
-            question_grades: s.question_grades?.map(g => 
+            question_grades: s.question_grades?.map(g =>
               g.id === qg.id ? { ...g, educator_override: questionEditScore } : g
             ),
           };
@@ -212,20 +231,20 @@ export default function GradingReview() {
     setRegradingId(qg.id);
     try {
       const result = await regradeSingleQuestion(sub.id, qg.question_id, sub.assignment_id);
-      
+
       toast.success(`Question ${qg.question_label} regraded successfully.`);
-      
+
       // Update local state with the new grade
       setSubmissions(subs => subs.map(s => {
         if (s.id === sub.id) {
-          const updatedQg = s.question_grades?.map(g => 
+          const updatedQg = s.question_grades?.map(g =>
             g.id === qg.id ? { ...g, ...result.question_grade, extracted_text: g.extracted_text } : g
           );
           return { ...s, question_grades: updatedQg };
         }
         return s;
       }));
-      
+
       // Re-aggregate total score after regrading
       const aggRes = await aggregateScores(sub.id, sub.assignment_id);
       setSubmissions(subs => subs.map(s => {
@@ -264,13 +283,13 @@ export default function GradingReview() {
       if (error) throw error;
 
       toast.success('Transcript updated locally.');
-      
+
       // Update local state
       setSubmissions(subs => subs.map(s => {
         if (s.id === sub.id) {
           return {
             ...s,
-            question_grades: s.question_grades?.map(g => 
+            question_grades: s.question_grades?.map(g =>
               g.id === qg.id ? { ...g, extracted_text: transcriptValue } : g
             )
           };
@@ -289,7 +308,7 @@ export default function GradingReview() {
   const approveGrade = async (sub: Submission) => {
     setSavingId(sub.id);
     const finalScore = sub.final_score ?? sub.ai_score;
-    
+
     const { error } = await supabase
       .from('submissions')
       .update({
@@ -302,7 +321,7 @@ export default function GradingReview() {
       toast.error('Failed to approve grade');
     } else {
       toast.success('Grade approved and released');
-      setSubmissions(subs => subs.map(s => 
+      setSubmissions(subs => subs.map(s =>
         s.id === sub.id ? { ...s, final_score: finalScore, graded_at: new Date().toISOString() } : s
       ));
     }
@@ -324,9 +343,9 @@ export default function GradingReview() {
   };
 
   const hasPlaceholderContent = (content: string) => {
-    return content.includes('[Note: For actual grading') || 
-           content.includes('[Text extraction failed') ||
-           content.includes('Uploaded file:');
+    return content.includes('[Note: For actual grading') ||
+      content.includes('[Text extraction failed') ||
+      content.includes('Uploaded file:');
   };
 
   const getStatus = (sub: Submission) => {
@@ -358,7 +377,7 @@ export default function GradingReview() {
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
           <h1 className="text-3xl font-bold text-foreground mb-1">Grading Review</h1>
           <p className="text-muted-foreground mb-6">Review per-question grades and approve for release</p>
-          
+
           <div className="flex gap-4 mb-8">
             <Card className="flex-1"><CardContent className="pt-6"><div className="text-2xl font-bold">{pendingCount}</div><p className="text-sm text-muted-foreground">Pending</p></CardContent></Card>
             <Card className="flex-1"><CardContent className="pt-6"><div className="text-2xl font-bold">{reviewedCount}</div><p className="text-sm text-muted-foreground">Released</p></CardContent></Card>
@@ -381,7 +400,7 @@ export default function GradingReview() {
                     const displayScore = sub.final_score ?? sub.ai_score ?? 0;
                     const hasPlaceholder = hasPlaceholderContent(sub.content);
                     const qgList = sub.question_grades || [];
-                    
+
                     return (
                       <Collapsible key={sub.id} open={isExpanded} onOpenChange={() => toggleRow(sub.id)}>
                         <div className={`border rounded-lg overflow-hidden ${hasPlaceholder ? 'border-yellow-500/50' : ''}`}>
@@ -403,7 +422,7 @@ export default function GradingReview() {
                               </div>
                             </div>
                           </CollapsibleTrigger>
-                          
+
                           <CollapsibleContent>
                             <div className="border-t p-6 bg-muted/10 space-y-6">
                               {/* Per Question Breakdown */}
@@ -419,7 +438,7 @@ export default function GradingReview() {
                                       return (
                                         <Card key={qg.id} className={`border ${isLowConfidence && !qg.educator_override ? 'border-orange-500/50 bg-orange-500/5' : ''}`}>
                                           <CardContent className="p-4 space-y-4">
-                                            
+
                                             {/* Header */}
                                             <div className="flex justify-between items-start">
                                               <div>
@@ -444,27 +463,30 @@ export default function GradingReview() {
                                             </div>
 
                                             {/* Exact Handwriting Text extracted */}
-                                            <div className="bg-background rounded p-3 border font-mono text-sm shadow-inner relative group">
-                                              <div className="flex justify-between items-center mb-1">
-                                                <div className="text-xs text-muted-foreground font-sans font-medium uppercase tracking-wider">Student Handwriting Transcript</div>
+                                            <div className="border border-blue-500/20 rounded-xl bg-blue-500/5 overflow-hidden shadow-sm relative group">
+                                              <div className="bg-blue-500/10 border-b border-blue-500/20 px-4 py-3 flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                  <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                                  <h4 className="text-sm font-semibold m-0 text-blue-900 dark:text-blue-300">Extracted Student Text</h4>
+                                                </div>
                                                 {!editingTranscriptId && sub.graded_at === null && (
-                                                  <Button 
-                                                    variant="ghost" 
-                                                    size="sm" 
-                                                    className="h-6 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
                                                     onClick={() => startTranscriptEditing(qg)}
                                                   >
                                                     <Edit2 className="h-3 w-3 mr-1" /> Edit OCR
                                                   </Button>
                                                 )}
                                               </div>
-                                              
+
                                               {editingTranscriptId === qg.id ? (
-                                                <div className="space-y-2">
-                                                  <Textarea 
-                                                    value={transcriptValue} 
+                                                <div className="p-4 space-y-3 bg-muted/5">
+                                                  <Textarea
+                                                    value={transcriptValue}
                                                     onChange={(e) => setTranscriptValue(e.target.value)}
-                                                    className="min-h-[80px] bg-muted/5 font-mono text-sm"
+                                                    className="min-h-[120px] bg-background font-mono text-sm leading-relaxed"
                                                   />
                                                   <div className="flex justify-end gap-2">
                                                     <Button variant="ghost" size="sm" onClick={() => setEditingTranscriptId(null)}>Cancel</Button>
@@ -475,16 +497,21 @@ export default function GradingReview() {
                                                   </div>
                                                 </div>
                                               ) : (
-                                                <div className="whitespace-pre-wrap">
-                                                  {qg.extracted_text || <span className="text-muted-foreground italic">[No text extracted for this question]</span>}
+                                                <div className="p-4 text-sm max-h-[400px] overflow-y-auto whitespace-pre-wrap leading-relaxed text-card-foreground">
+                                                  {qg.extracted_text ? formatStudentText(qg.extracted_text) : <span className="text-muted-foreground italic">No text extracted for this question.</span>}
                                                 </div>
                                               )}
                                             </div>
 
                                             {/* AI Feedback & Rubric Output */}
-                                            <div>
-                                              <div className="text-xs text-muted-foreground mb-1 font-sans font-medium uppercase tracking-wider">AI Reasoning</div>
-                                              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{formatFeedback(qg.ai_feedback)}</p>
+                                            <div className="border border-purple-500/20 rounded-xl bg-purple-500/5 overflow-hidden shadow-sm">
+                                              <div className="bg-purple-500/10 border-b border-purple-500/20 px-4 py-3 flex items-center gap-2">
+                                                <MessageSquare className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                                                <h4 className="text-sm font-semibold m-0 text-purple-900 dark:text-purple-300">AI Reasoning</h4>
+                                              </div>
+                                              <div className="p-4 text-sm whitespace-pre-wrap leading-relaxed text-foreground">
+                                                {formatFeedback(qg.ai_feedback)}
+                                              </div>
                                             </div>
 
                                             {/* Editing UI */}
@@ -494,19 +521,19 @@ export default function GradingReview() {
                                                   <label className="text-sm font-medium">New Score:</label>
                                                   <Input type="number" min={0} max={qg.max_score} value={questionEditScore} onChange={(e) => setQuestionEditScore(Number(e.target.value))} className="w-24 bg-background" />
                                                   <Button size="sm" onClick={() => saveQuestionGradeOverride(sub, qg)} disabled={savingId === qg.id}>
-                                                    {savingId === qg.id ? <Loader2 className="h-4 w-4 animate-spin mr-1"/> : <Save className="h-4 w-4 mr-1"/>} Save
+                                                    {savingId === qg.id ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />} Save
                                                   </Button>
-                                                  <Button variant="ghost" size="sm" onClick={cancelQuestionEditing}><X className="h-4 w-4"/></Button>
+                                                  <Button variant="ghost" size="sm" onClick={cancelQuestionEditing}><X className="h-4 w-4" /></Button>
                                                 </div>
                                               ) : (
                                                 <div className="flex gap-2 w-full">
                                                   <Button variant="outline" size="sm" onClick={() => startQuestionEditing(qg)} disabled={sub.graded_at !== null}>
                                                     <Edit2 className="h-4 w-4 mr-2" /> Modify Score
                                                   </Button>
-                                                  <Button 
-                                                    variant="outline" 
-                                                    size="sm" 
-                                                    onClick={() => handleRegradeQuestion(sub, qg)} 
+                                                  <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleRegradeQuestion(sub, qg)}
                                                     disabled={sub.graded_at !== null || regradingId === qg.id}
                                                     className="text-accent border-accent/20 hover:bg-accent/5"
                                                   >
@@ -530,22 +557,36 @@ export default function GradingReview() {
                                 </div>
                               ) : (
                                 // Legacy Fallback view for strictly old monolithic grades
-                                <div className="space-y-4">
-                                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-start gap-3">
-                                      <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                                      <div>
-                                        <p className="font-medium text-yellow-700">Legacy Monolithic Grading Format</p>
-                                        <p className="text-sm text-muted-foreground mt-1">This submission lacks per-question breakdowns because it was graded with legacy versions of EvalueX. To see the new Question-Centric format, regrade from scratch.</p>
+                                <div className="space-y-6">
+                                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-start gap-3">
+                                    <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                      <p className="font-medium text-yellow-700">Legacy Monolithic Grading Format</p>
+                                      <p className="text-sm text-muted-foreground mt-1">This submission lacks per-question breakdowns because it was graded with legacy versions of EvalueX. To see the new Question-Centric format, regrade from scratch.</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="border border-blue-500/20 rounded-xl bg-blue-500/5 overflow-hidden shadow-sm">
+                                    <div className="bg-blue-500/10 border-b border-blue-500/20 px-4 py-3 flex items-center gap-2">
+                                      <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                      <h4 className="text-sm font-semibold m-0 text-blue-900 dark:text-blue-300">Extracted Student Text</h4>
+                                    </div>
+                                    <div className="p-5 text-sm max-h-[600px] overflow-y-auto whitespace-pre-wrap leading-relaxed text-foreground">
+                                      {sub.content ? formatStudentText(sub.content) : <span className="text-muted-foreground italic">No text extracted.</span>}
+                                    </div>
+                                  </div>
+
+                                  {sub.ai_feedback && (
+                                    <div className="border border-purple-500/20 rounded-xl bg-purple-500/5 overflow-hidden shadow-sm">
+                                      <div className="bg-purple-500/10 border-b border-purple-500/20 px-4 py-3 flex items-center gap-2">
+                                        <MessageSquare className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                                        <h4 className="text-sm font-semibold m-0 text-purple-900 dark:text-purple-300">Legacy AI Feedback</h4>
+                                      </div>
+                                      <div className="p-5 text-sm whitespace-pre-wrap leading-relaxed text-foreground">
+                                        {formatFeedback(sub.ai_feedback)}
                                       </div>
                                     </div>
-                                   <div>
-                                    <h4 className="text-sm font-medium mb-2">Student Full Text Block</h4>
-                                    <div className="bg-background p-3 rounded border text-sm max-h-40 overflow-y-auto">{sub.content}</div>
-                                  </div>
-                                  <div>
-                                    <h4 className="text-sm font-medium mb-2">Legacy AI Feedback</h4>
-                                    <div className="bg-background p-3 rounded border text-sm whitespace-pre-wrap">{formatFeedback(sub.ai_feedback)}</div>
-                                  </div>
+                                  )}
                                 </div>
                               )}
 
@@ -564,7 +605,7 @@ export default function GradingReview() {
                                       </AlertDialogFooter>
                                     </AlertDialogContent>
                                   </AlertDialog>
-                                  
+
                                   <Button onClick={() => approveGrade(sub)} disabled={savingId === sub.id} size="lg">
                                     <CheckCircle className="h-5 w-5 mr-2" />
                                     Finalize & Release Total Score ({displayScore}/{sub.assignment.max_score})

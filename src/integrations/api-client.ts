@@ -50,14 +50,15 @@ export async function extractTextFromImage(
 }
 
 /**
- * Grade a student submission
+ * Grade a student submission via the QCP pipeline.
+ * extract-answers MUST have been called first (submission_answers must exist).
  */
 export async function gradeSubmission(
   submissionId: string,
-  content: string,
-  assignmentTitle: string,
-  assignmentDescription: string | null,
-  maxScore: number,
+  _content: string,                        // kept for call-site compat, ignored by backend
+  _assignmentTitle: string,                // kept for call-site compat, ignored by backend
+  _assignmentDescription: string | null,   // kept for call-site compat
+  _maxScore: number,                       // kept for call-site compat
   assignmentId: string
 ) {
   const token = await getAuthToken();
@@ -70,10 +71,6 @@ export async function gradeSubmission(
     },
     body: JSON.stringify({
       submissionId,
-      content,
-      assignmentTitle,
-      assignmentDescription,
-      maxScore,
       assignmentId,
     }),
   });
