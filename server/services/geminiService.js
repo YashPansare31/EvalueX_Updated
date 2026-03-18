@@ -7,6 +7,22 @@ function stripBase64Prefix(str) {
   return str.replace(/^data:image\/\w+;base64,/, '');
 }
 
+async function callGeminiWithRetry(fn, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.message.includes('429') && attempt < maxRetries) {
+        const waitTime = attempt * 12000; // 12s, 24s, 36s
+        console.log(`Rate limited, waiting ${waitTime / 1000}s before retry ${attempt}/${maxRetries}`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 /**
  * Extract structured question paper schema from image(s).
  * Returns parsed JSON with full question tree.
@@ -84,10 +100,10 @@ async function detectAnswerLayout(base64Pages, questions, mimeType = 'image/jpeg
     },
   });
 
-  const imageParts = base64Pages.map((b64, idx) => ({
-    inlineData: { data: stripBase64Prefix(b64), mimeType },
-    text: `[PAGE ${idx + 1}]`,
-  }));
+  const imageParts = base64Pages.flatMap((b64, idx) => [
+    { text: `[PAGE ${idx + 1}]` },
+    { inlineData: { data: stripBase64Prefix(b64), mimeType } }
+  ]);
 
   const flatQuestions = flattenQuestions(questions);
   const questionList = flatQuestions
@@ -104,6 +120,14 @@ Examine ALL pages carefully. For EACH question, identify:
 2. The approximate region on each page (top_third / middle_third / bottom_third / full_page / top_half / bottom_half)
 3. Whether the student attempted this question
 4. IMPORTANT: If the student wrote answers for BOTH questions in an optional pair (e.g., both Q1 and Q2 when only one is required), set optional_also_attempted = true for BOTH
+
+CRITICAL — PARTIAL LABEL HANDLING:
+Students often use shorthand when writing multi-part answers. For example, for Q1 which has parts A and B:
+- They may write "Q.1 A" or "Q1 a)" for the first part
+- Then ONLY write "B" or "b)" (WITHOUT repeating "Q.1") immediately after for the second part
+- A standalone letter label like "B", "b)", "b." following a Q1 answer block almost certainly means "Q1 B" (the next sub-part of the same question)
+- Similarly, roman numerals (i, ii, iii) appearing after a sub-question heading belong to that sub-question
+Always try to match orphan letter/numeral labels to the most recently headed parent question.
 
 Return ONLY this JSON structure:
 {
@@ -164,9 +188,16 @@ INSTRUCTIONS:
 - Do NOT include text that belongs to other questions
 - Do NOT include the question text itself, only the student's answer
 
+CRITICAL — PARTIAL / SHORTHAND LABEL HANDLING:
+Students frequently use shorthand when writing multi-part answers. Examples:
+  • For Q1 with parts A and B: they write "Q.1 A" (or "Q1 a)") for part A, then ONLY "B" or "b)" for part B without re-writing "Q.1"
+  • A bare letter label (A, B, C or a, b, c) or roman numeral (i, ii, iii) that appears right after the previous sub-part is a continuation — treat it as the next sub-part of the same parent question
+  • If ${questionLabel} ends with a letter (e.g. Q1b), also look for content introduced by just "b", "b)", "b." or "B" after the "Q1 a" section on the same page(s)
+Do not skip answer content simply because the student omitted the full question number prefix.
+
 Return the extracted answer text directly, no JSON wrapper, no explanation.`;
 
-  const result = await model.generateContent([prompt, ...imageParts]);
+  const result = await callGeminiWithRetry(() => model.generateContent([prompt, ...imageParts]));
   return result.response.text().trim();
 }
 

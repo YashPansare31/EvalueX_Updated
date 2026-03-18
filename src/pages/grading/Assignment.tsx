@@ -13,7 +13,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/layout/Header';
 import { ArrowLeft, Plus, Sparkles, CheckCircle2, Clock, Loader2, User, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { gradeSubmission } from '@/integrations/api-client';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,7 +51,7 @@ export default function AssignmentPage() {
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [grading, setGrading] = useState<string | null>(null);
+  const [grading, setGrading] = useState<string | null>(null); // kept for button disabled state
   const [studentName, setStudentName] = useState('');
   const [content, setContent] = useState('');
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
@@ -136,37 +135,15 @@ export default function AssignmentPage() {
   };
 
   const handleGradeWithAI = async (submission: Submission) => {
-    setGrading(submission.id);
-
-    try {
-      const data = await gradeSubmission(
-        submission.id,
-        submission.content,
-        assignment?.title || '',
-        assignment?.description || null,
-        assignment?.max_score || 0,
-        assignment?.id || ''
-      );
-
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-
-      toast({
-        title: 'AI Grading Complete',
-        description: 'Review the feedback and finalize the score.',
-      });
-
-      fetchSubmissions();
-    } catch (error: any) {
-      toast({
-        title: 'Grading failed',
-        description: error.message || 'An unexpected error occurred. Please try again.',
-        variant: 'destructive',
-      });
-    }
-
-    setGrading(null);
+    // The QCP pipeline requires answer sheets to be scanned and processed via
+    // Upload Answers → extract-answers → grade-submission.
+    // Manual text submissions cannot be graded via this flow.
+    toast({
+      title: 'Use Upload Answers for AI Grading',
+      description:
+        'AI grading requires scanned answer sheet images. Please use the "Upload Answers" page to upload this student\'s answer sheet and run the QCP pipeline.',
+      variant: 'destructive',
+    });
   };
 
   const handleFinalizeScore = async (submissionId: string, score: number) => {

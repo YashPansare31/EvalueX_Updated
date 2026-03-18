@@ -3,6 +3,13 @@ const router = express.Router();
 const supabase = require('../services/supabaseClient');
 const { detectAnswerLayout, extractSingleAnswerText, flattenQuestions } = require('../services/geminiService');
 
+function sanitizeExtractedText(text) {
+  if (!text) return text;
+  // Regex to remove the recurring college header with optional trailing numbers (relaxed to account for slight OCR variations)
+  const regex = /AISSMS\s+INSTITUTE\s+OF[\s\S]*?Pune\s+University\s*\d*/gi;
+  return text.replace(regex, '').trim();
+}
+
 // POST /api/extract-answers
 // Accepts: { submissionId, assignmentId, pages: string[] (base64, one per page), mimeType? }
 // Action:
@@ -66,21 +73,24 @@ router.post('/', async (req, res) => {
       const pagesToUse = relevantPages.length > 0 ? relevantPages : pages;
 
       try {
-        const extractedText = await extractSingleAnswerText(
+        let extractedText = await extractSingleAnswerText(
           pagesToUse,
           question.question_text,
           mapEntry.question_label,
           mimeType
         );
 
+        extractedText = sanitizeExtractedText(extractedText);
+
         return {
           submission_id: submissionId,
           question_id: question.id,
           question_label: mapEntry.question_label,
           extracted_text: extractedText,
-          page_refs: mapEntry.page_refs || [],
-          is_optional_attempt: mapEntry.optional_also_attempted || false,
-          ocr_confidence: extractedText.includes('[ILLEGIBLE]') ? 0.6 : 0.9,
+          // DB column is INTEGER[], so we extract only the page numbers
+          page_numbers: (mapEntry.page_refs || []).map(ref => ref.page),
+          // DB column is confidence (numeric)
+          confidence: extractedText.includes('[ILLEGIBLE]') ? 0.6 : 0.9,
         };
       } catch (err) {
         console.error(`[extract-answers] Failed Pass 2B for ${mapEntry.question_label}:`, err.message);
@@ -89,9 +99,8 @@ router.post('/', async (req, res) => {
           question_id: question.id,
           question_label: mapEntry.question_label,
           extracted_text: '[EXTRACTION FAILED — MANUAL REVIEW REQUIRED]',
-          page_refs: mapEntry.page_refs || [],
-          is_optional_attempt: false,
-          ocr_confidence: 0.0,
+          page_numbers: (mapEntry.page_refs || []).map(ref => ref.page),
+          confidence: 0.0,
         };
       }
     });
@@ -100,9 +109,13 @@ router.post('/', async (req, res) => {
 
     // Upsert all extracted answers into submission_answers
     for (const answer of extractedAnswers) {
-      await supabase.from('submission_answers').upsert(answer, {
+      const { error: upsertErr } = await supabase.from('submission_answers').upsert(answer, {
         onConflict: 'submission_id,question_id',
       });
+      if (upsertErr) {
+        console.error(`[extract-answers] Upsert failed for ${answer.question_label}:`, upsertErr.message);
+        throw new Error(`Failed to save extracted answer for ${answer.question_label}: ${upsertErr.message}`);
+      }
     }
 
     // Reset status to pending (ready for grading)
@@ -114,15 +127,14 @@ router.post('/', async (req, res) => {
       extracted_answers: extractedAnswers.map(a => ({
         question_label: a.question_label,
         has_text: !!a.extracted_text && !a.extracted_text.includes('[NO ANSWER FOUND]'),
-        is_optional_attempt: a.is_optional_attempt,
-        ocr_confidence: a.ocr_confidence,
+        confidence: a.confidence,
         text_preview: a.extracted_text?.substring(0, 100) + (a.extracted_text?.length > 100 ? '...' : ''),
       })),
     });
 
   } catch (err) {
     console.error('[extract-answers] Fatal error:', err.message);
-    await supabase.from('submissions').update({ grading_status: 'pending' }).eq('id', submissionId).catch(() => {});
+    await supabase.from('submissions').update({ grading_status: 'pending' }).eq('id', submissionId).catch(() => { });
     return res.status(500).json({ error: 'Answer extraction failed', details: err.message });
   }
 });

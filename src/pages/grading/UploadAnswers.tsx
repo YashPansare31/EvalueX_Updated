@@ -15,7 +15,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { extractTextFromImage, gradeSubmission } from '@/integrations/api-client';
+import { extractAnswers, gradeSubmission } from '@/integrations/api-client';
 import {
   Dialog,
   DialogContent,
@@ -33,7 +33,6 @@ interface UploadedFile {
   progress: number;
   preview?: string;
   errorMessage?: string;
-  extractedText?: string;
 }
 
 interface Assignment {
@@ -159,68 +158,27 @@ export default function UploadAnswers() {
     setUploadedFiles(prev => prev.filter(f => f.id !== id));
   };
 
-  // Convert file to base64
-  const fileToBase64 = (file: File): Promise<string> => {
+  // Convert a single file to an array of base64 page strings
+  // For images: one page. For PDFs we treat the whole PDF as one base64 blob
+  // (the backend Gemini call handles multi-page PDFs natively).
+  const fileToPagesBase64 = (file: File): Promise<string[]> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = () => {
         const result = reader.result as string;
-        // Remove the data URL prefix (e.g., "data:image/png;base64,")
+        // Strip the data URL prefix — backend expects raw base64
         const base64 = result.split(',')[1];
-        resolve(base64);
+        resolve([base64]);  // single-page or single-blob
       };
-      reader.onerror = error => reject(error);
+      reader.onerror = (err) => reject(err);
     });
   };
 
-  // Extract text from file using OCR
-  const extractTextFromFile = async (file: UploadedFile): Promise<string> => {
+  const handleAutoGradeSubmission = async (submissionId: string, assignmentId: string): Promise<boolean> => {
     try {
-      const base64 = await fileToBase64(file.file);
-      
-      const data = await extractTextFromImage(base64, file.type, file.name);
-
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-
-      return data?.extractedText || '';
-    } catch (error) {
-      console.error('OCR extraction error:', error);
-      throw error;
-    }
-  };
-
-  const handleGradeSubmission = async (submissionId: string, content: string): Promise<boolean> => {
-    const assignment = assignments.find(a => a.id === selectedAssignment);
-    if (!assignment) return false;
-
-    try {
-      const data = await gradeSubmission(
-        submissionId,
-        content,
-        assignment.title,
-        assignment.description,
-        assignment.max_score,
-        assignment.id
-      );
-
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-
-      // Update submission in database
-      const { error: updateError } = await supabase
-        .from('submissions')
-        .update({
-          ai_score: data.ai_score,
-          ai_feedback: data.ai_feedback,
-        })
-        .eq('id', submissionId);
-
-      if (updateError) throw updateError;
-
+      const data = await gradeSubmission(submissionId, '', '', null, 0, assignmentId);
+      if (data?.error) throw new Error(data.error);
       return true;
     } catch (error) {
       console.error('Grading error:', error);
@@ -241,81 +199,80 @@ export default function UploadAnswers() {
     }
 
     setIsProcessing(true);
-    const submissionsToGrade: { id: string; content: string }[] = [];
+    const submissionsToGrade: { id: string; assignmentId: string }[] = [];
 
     // Process files sequentially
     for (let i = 0; i < uploadedFiles.length; i++) {
       const file = uploadedFiles[i];
-      
-      // Update status to uploading
-      setUploadedFiles(prev => 
-        prev.map(f => f.id === file.id ? { ...f, status: 'uploading' } : f)
+
+      // ── Step A: Mark as uploading ────────────────────────────────────────
+      setUploadedFiles(prev =>
+        prev.map(f => f.id === file.id ? { ...f, status: 'uploading', progress: 10 } : f)
       );
 
-      // Simulate upload progress
-      for (let progress = 0; progress <= 50; progress += 10) {
-        await new Promise(resolve => setTimeout(resolve, 30));
-        setUploadedFiles(prev => 
-          prev.map(f => f.id === file.id ? { ...f, progress } : f)
-        );
-      }
-
-      // Update to extracting (OCR)
-      setUploadedFiles(prev => 
-        prev.map(f => f.id === file.id ? { ...f, status: 'extracting', progress: 50 } : f)
-      );
-
-      let extractedText = '';
-      try {
-        // Extract text using OCR
-        extractedText = await extractTextFromFile(file);
-        
-        // Update progress after OCR
-        setUploadedFiles(prev => 
-          prev.map(f => f.id === file.id ? { ...f, progress: 80, extractedText } : f)
-        );
-        
-        if (!extractedText || extractedText.trim().length < 10) {
-          toast.warning(`Could not extract meaningful text from ${file.name}`);
-          extractedText = `[OCR extraction yielded minimal text for file: ${file.name}]`;
-        }
-      } catch (ocrError) {
-        console.error('OCR error for file:', file.name, ocrError);
-        extractedText = `[Text extraction failed for file: ${file.name}. Please manually enter the content.]`;
-        toast.warning(`Text extraction failed for ${file.name}`);
-      }
-
-      // Update to processing (saving to database)
-      setUploadedFiles(prev => 
-        prev.map(f => f.id === file.id ? { ...f, status: 'processing', progress: 90 } : f)
-      );
+      let submissionId: string | null = null;
 
       try {
-        // Extract student name from filename (remove extension)
+        // ── Step B: Save Supabase submission row ────────────────────────────
         const studentName = file.name.replace(/\.[^/.]+$/, '');
-        
+
         const { data: submission, error } = await supabase.from('submissions').insert({
           assignment_id: selectedAssignment,
           student_name: studentName,
-          content: extractedText
+          content: '',           // content is no longer used for grading
+          grading_status: 'pending',
         }).select('id').single();
 
-        if (error) throw error;
+        if (error || !submission) throw error || new Error('Failed to create submission row');
+        submissionId = submission.id;
 
-        setUploadedFiles(prev => 
+        setUploadedFiles(prev =>
+          prev.map(f => f.id === file.id ? { ...f, progress: 30 } : f)
+        );
+
+        // ── Step C: Extract QCP answers from the answer sheet ────────────────
+        setUploadedFiles(prev =>
+          prev.map(f => f.id === file.id ? { ...f, status: 'extracting', progress: 40 } : f)
+        );
+
+        const pages = await fileToPagesBase64(file.file);
+        const extractResult = await extractAnswers(
+          submissionId,
+          selectedAssignment,
+          pages,
+          file.type
+        );
+
+        if (extractResult?.partial_extraction) {
+          toast.warning(
+            `Partial extraction for ${file.name}: ${extractResult.submission_answers_count}/${extractResult.expected_count} questions extracted. Grading may be incomplete.`
+          );
+        }
+
+        if (!extractResult?.submission_answers_count || extractResult.submission_answers_count === 0) {
+          throw new Error(`Answer extraction returned 0 rows for ${file.name}. Cannot grade.`);
+        }
+
+        setUploadedFiles(prev =>
+          prev.map(f => f.id === file.id ? { ...f, progress: 80 } : f)
+        );
+
+        // ── Step D: Mark as complete ─────────────────────────────────────────
+        setUploadedFiles(prev =>
           prev.map(f => f.id === file.id ? { ...f, status: 'complete', progress: 100 } : f)
         );
 
-        if (autoGrade && submission && extractedText.length > 20) {
-          submissionsToGrade.push({ id: submission.id, content: extractedText });
+        if (autoGrade) {
+          submissionsToGrade.push({ id: submissionId, assignmentId: selectedAssignment });
         }
+
       } catch (error) {
-        console.error('Error processing file:', error);
-        setUploadedFiles(prev => 
-          prev.map(f => f.id === file.id ? { 
-            ...f, 
+        console.error('Error processing file:', file.name, error);
+        setUploadedFiles(prev =>
+          prev.map(f => f.id === file.id ? {
+            ...f,
             status: 'error',
-            errorMessage: 'Failed to save submission'
+            errorMessage: error instanceof Error ? error.message : 'Processing failed',
           } : f)
         );
       }
@@ -323,18 +280,18 @@ export default function UploadAnswers() {
 
     const successCount = uploadedFiles.filter(f => f.status === 'complete').length;
     if (successCount > 0) {
-      toast.success(`Successfully processed ${successCount} file(s) with OCR`);
+      toast.success(`Successfully processed ${successCount} file(s) — answers extracted and ready for grading`);
     }
 
-    // Auto-grade if enabled
+    // ── Auto-grade: call grade-submission sequentially ─────────────────────
     if (autoGrade && submissionsToGrade.length > 0) {
       setGradingProgress({ current: 0, total: submissionsToGrade.length });
-      
+
       for (let i = 0; i < submissionsToGrade.length; i++) {
         setGradingProgress({ current: i + 1, total: submissionsToGrade.length });
         const sub = submissionsToGrade[i];
-        await handleGradeSubmission(sub.id, sub.content);
-        // Small delay between grading requests to avoid rate limits
+        await handleAutoGradeSubmission(sub.id, sub.assignmentId);
+        // Small delay between grading requests
         if (i < submissionsToGrade.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
@@ -562,13 +519,14 @@ export default function UploadAnswers() {
                                   <span className={getStatusColor(file.status)}>
                                     {file.status === 'pending' && 'Ready'}
                                     {file.status === 'uploading' && 'Uploading...'}
+                                    {file.status === 'extracting' && 'Extracting answers (QCP)...'}
                                     {file.status === 'processing' && 'Processing...'}
                                     {file.status === 'complete' && 'Complete'}
                                     {file.status === 'error' && file.errorMessage}
                                   </span>
                                 </div>
                                 {/* Individual Progress Bar */}
-                                {(file.status === 'uploading' || file.status === 'processing') && (
+                                {(file.status === 'uploading' || file.status === 'extracting' || file.status === 'processing') && (
                                   <Progress value={file.progress} className="h-1 mt-2" />
                                 )}
                               </div>
@@ -588,7 +546,7 @@ export default function UploadAnswers() {
                                     <Eye className="h-4 w-4" />
                                   </Button>
                                 )}
-                                {file.status === 'uploading' || file.status === 'processing' ? (
+                                {file.status === 'uploading' || file.status === 'extracting' || file.status === 'processing' ? (
                                   <Loader2 className="h-5 w-5 animate-spin text-accent" />
                                 ) : file.status === 'complete' ? (
                                   <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -731,11 +689,15 @@ export default function UploadAnswers() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-accent">•</span>
-                    Ensure scans are clear and legible
+                    Exam questions must be set up before uploading answer sheets
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-accent">•</span>
-                    PDF files with multiple pages will be processed together
+                    Each file is mapped per-question using the QCP pipeline
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-accent">•</span>
+                    Ensure scans are clear and well-lit for best extraction accuracy
                   </li>
                 </ul>
               </CardContent>
