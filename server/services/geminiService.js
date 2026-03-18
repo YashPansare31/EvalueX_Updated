@@ -107,7 +107,7 @@ async function detectAnswerLayout(base64Pages, questions, mimeType = 'image/jpeg
 
   const flatQuestions = flattenQuestions(questions);
   const questionList = flatQuestions
-    .map(q => `- ${q.question_label}: "${q.question_text.substring(0, 100)}"`)
+    .map(q => `- ${q.question_label}: "${q.question_text.substring(0, 250)}"`)
     .join('\n');
 
   const prompt = `You are analyzing a university student's handwritten exam answer sheet.
@@ -115,11 +115,16 @@ async function detectAnswerLayout(base64Pages, questions, mimeType = 'image/jpeg
 The exam has these questions:
 ${questionList}
 
-Examine ALL pages carefully. For EACH question, identify:
+Examine ALL pages carefully. For EACH question listed above, identify:
 1. Which page numbers contain the student's answer (an answer may span multiple pages)
 2. The approximate region on each page (top_third / middle_third / bottom_third / full_page / top_half / bottom_half)
 3. Whether the student attempted this question
 4. IMPORTANT: If the student wrote answers for BOTH questions in an optional pair (e.g., both Q1 and Q2 when only one is required), set optional_also_attempted = true for BOTH
+
+CRITICAL — DEFAULT TO ATTEMPTED:
+If there is ANY written content on the pages that could plausibly be for a question, mark attempted = true.
+Only mark attempted = false if the pages are completely blank for that question or if the student explicitly wrote "Not attempted" or left a clearly empty section.
+When in doubt, mark attempted = true — it is better to extract an empty answer than to miss a real one.
 
 CRITICAL — PARTIAL LABEL HANDLING:
 Students often use shorthand when writing multi-part answers. For example, for Q1 which has parts A and B:
@@ -127,7 +132,10 @@ Students often use shorthand when writing multi-part answers. For example, for Q
 - Then ONLY write "B" or "b)" (WITHOUT repeating "Q.1") immediately after for the second part
 - A standalone letter label like "B", "b)", "b." following a Q1 answer block almost certainly means "Q1 B" (the next sub-part of the same question)
 - Similarly, roman numerals (i, ii, iii) appearing after a sub-question heading belong to that sub-question
+- A student writing "Q1" may be answering what the exam calls Q1a and Q1b — assign those pages to BOTH sub-parts
 Always try to match orphan letter/numeral labels to the most recently headed parent question.
+
+IMPORTANT: Your answer_map MUST contain an entry for EVERY question in the list above, even if attempted = false.
 
 Return ONLY this JSON structure:
 {
@@ -222,13 +230,17 @@ async function extractTextFromImage(base64Image, mimeType = 'image/jpeg') {
   return result.response.text();
 }
 
-// Helper: flatten nested question tree into a flat array
+// Helper: flatten nested question tree into a flat array.
+// Includes BOTH parent questions AND their sub-questions so that
+// a student writing "Q1" (without A/B suffix) is still matched.
 function flattenQuestions(questions) {
   const flat = [];
   for (const q of questions) {
     if (!q.sub_questions || q.sub_questions.length === 0) {
       flat.push(q);
     } else {
+      // Include the parent question itself so layout AI can match it
+      flat.push(q);
       for (const sq of q.sub_questions) {
         flat.push(sq);
       }
