@@ -140,8 +140,13 @@ export default function GradingReview() {
               const answer = (sa || []).find(a => a.submission_id === sub.id && a.question_id === g.question_id);
               return { ...g, extracted_text: answer?.extracted_text };
             })
-            // Sort by label intuitively
-            .sort((a, b) => a.question_label.localeCompare(b.question_label));
+            // Sort numerically so Q1 < Q2 < Q10 < Q11, etc.
+            .sort((a, b) => {
+              const numA = parseInt(a.question_label.replace(/\D+/g, ''), 10);
+              const numB = parseInt(b.question_label.replace(/\D+/g, ''), 10);
+              if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+              return a.question_label.localeCompare(b.question_label);
+            });
 
           return {
             ...sub,
@@ -430,7 +435,14 @@ export default function GradingReview() {
                                 <div className="space-y-4">
                                   <h3 className="font-semibold text-lg flex items-center gap-2">Question Breakdown</h3>
                                   <div className="grid gap-4">
-                                    {qgList.map(qg => {
+                                    {qgList.filter(qg => {
+                                      const t = (qg.extracted_text || '').trim();
+                                      if (!t) return false;
+                                      // Exclude sentinel values that indicate the student did not answer
+                                      if (t === '[NO ANSWER FOUND]') return false;
+                                      if (t === '[EXTRACTION FAILED — MANUAL REVIEW REQUIRED]') return false;
+                                      return true;
+                                    }).map(qg => {
                                       const isEditingThis = editingQuestionId === qg.id;
                                       const activeScore = qg.educator_override ?? qg.ai_score ?? 0;
                                       const isLowConfidence = qg.confidence === 'low' || qg.confidence === 'medium';
@@ -507,7 +519,7 @@ export default function GradingReview() {
                                             <div className="border border-purple-500/20 rounded-xl bg-purple-500/5 overflow-hidden shadow-sm">
                                               <div className="bg-purple-500/10 border-b border-purple-500/20 px-4 py-3 flex items-center gap-2">
                                                 <MessageSquare className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                                                <h4 className="text-sm font-semibold m-0 text-purple-900 dark:text-purple-300">AI Reasoning</h4>
+                                                <h4 className="text-sm font-semibold m-0 text-purple-900 dark:text-purple-300">AI Feedback</h4>
                                               </div>
                                               <div className="p-4 text-sm whitespace-pre-wrap leading-relaxed text-foreground">
                                                 {formatFeedback(qg.ai_feedback)}

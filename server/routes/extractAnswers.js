@@ -107,6 +107,49 @@ router.post('/', async (req, res) => {
 
     const extractedAnswers = (await Promise.all(extractionPromises)).filter(Boolean);
 
+    // ── PASS 2B FALLBACK: catch questions that Pass 2A missed entirely ─────
+    // Any question in the DB that has NO entry in answer_map at all (not even attempted:false)
+    // should still get a Pass-2B extraction attempt using all pages.
+    const mappedLabels = new Set(answerMap.map(e => e.question_label));
+    const orphanedQuestions = questionsWithLabels.filter(q => !mappedLabels.has(q.question_label));
+
+    if (orphanedQuestions.length > 0) {
+      console.log(`[extract-answers] Pass 2A missed ${orphanedQuestions.length} question(s): ${orphanedQuestions.map(q => q.question_label).join(', ')} — running fallback extraction on all pages`);
+      const fallbackPromises = orphanedQuestions.map(async (question) => {
+        try {
+          let extractedText = await extractSingleAnswerText(
+            pages,
+            question.question_text,
+            question.question_label,
+            mimeType
+          );
+          extractedText = sanitizeExtractedText(extractedText);
+
+          // Only store if we actually found something (not [NO ANSWER FOUND])
+          if (!extractedText || extractedText.trim() === '[NO ANSWER FOUND]') return null;
+
+          return {
+            submission_id: submissionId,
+            question_id: question.id,
+            question_label: question.question_label,
+            extracted_text: extractedText,
+            page_numbers: pages.map((_, i) => i + 1), // all pages
+            confidence: extractedText.includes('[ILLEGIBLE]') ? 0.6 : 0.85,
+          };
+        } catch (err) {
+          console.error(`[extract-answers] Fallback extraction failed for ${question.question_label}:`, err.message);
+          return null;
+        }
+      });
+
+      const fallbackAnswers = (await Promise.all(fallbackPromises)).filter(Boolean);
+      extractedAnswers.push(...fallbackAnswers);
+
+      if (fallbackAnswers.length > 0) {
+        console.log(`[extract-answers] Fallback recovered ${fallbackAnswers.length} answer(s): ${fallbackAnswers.map(a => a.question_label).join(', ')}`);
+      }
+    }
+
     // Upsert all extracted answers into submission_answers
     for (const answer of extractedAnswers) {
       const { error: upsertErr } = await supabase.from('submission_answers').upsert(answer, {
