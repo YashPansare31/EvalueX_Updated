@@ -87,9 +87,10 @@ router.post('/', async (req, res) => {
           question_id: question.id,
           question_label: mapEntry.question_label,
           extracted_text: extractedText,
-          page_refs: mapEntry.page_refs || [],
-          is_optional_attempt: mapEntry.optional_also_attempted || false,
-          ocr_confidence: extractedText.includes('[ILLEGIBLE]') ? 0.6 : 0.9,
+          // DB column is INTEGER[], so we extract only the page numbers
+          page_numbers: (mapEntry.page_refs || []).map(ref => ref.page),
+          // DB column is confidence (numeric)
+          confidence: extractedText.includes('[ILLEGIBLE]') ? 0.6 : 0.9,
         };
       } catch (err) {
         console.error(`[extract-answers] Failed Pass 2B for ${mapEntry.question_label}:`, err.message);
@@ -98,9 +99,8 @@ router.post('/', async (req, res) => {
           question_id: question.id,
           question_label: mapEntry.question_label,
           extracted_text: '[EXTRACTION FAILED — MANUAL REVIEW REQUIRED]',
-          page_refs: mapEntry.page_refs || [],
-          is_optional_attempt: false,
-          ocr_confidence: 0.0,
+          page_numbers: (mapEntry.page_refs || []).map(ref => ref.page),
+          confidence: 0.0,
         };
       }
     });
@@ -109,9 +109,13 @@ router.post('/', async (req, res) => {
 
     // Upsert all extracted answers into submission_answers
     for (const answer of extractedAnswers) {
-      await supabase.from('submission_answers').upsert(answer, {
+      const { error: upsertErr } = await supabase.from('submission_answers').upsert(answer, {
         onConflict: 'submission_id,question_id',
       });
+      if (upsertErr) {
+        console.error(`[extract-answers] Upsert failed for ${answer.question_label}:`, upsertErr.message);
+        throw new Error(`Failed to save extracted answer for ${answer.question_label}: ${upsertErr.message}`);
+      }
     }
 
     // Reset status to pending (ready for grading)
@@ -123,8 +127,7 @@ router.post('/', async (req, res) => {
       extracted_answers: extractedAnswers.map(a => ({
         question_label: a.question_label,
         has_text: !!a.extracted_text && !a.extracted_text.includes('[NO ANSWER FOUND]'),
-        is_optional_attempt: a.is_optional_attempt,
-        ocr_confidence: a.ocr_confidence,
+        confidence: a.confidence,
         text_preview: a.extracted_text?.substring(0, 100) + (a.extracted_text?.length > 100 ? '...' : ''),
       })),
     });

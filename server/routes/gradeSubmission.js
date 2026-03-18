@@ -141,17 +141,22 @@ router.post('/', async (req, res) => {
 
       // Upsert question_grades into DB
       for (const g of processedGrades) {
-        await supabase.from('question_grades').upsert({
+        const { error: upsertErr } = await supabase.from('question_grades').upsert({
           submission_id: g.submission_id,
           question_id: g.question_id,
           question_label: g.question_label,
-          ai_score: g.ai_score,
+          ai_score: Math.round(g.ai_score),
           max_score: g.max_score,
           ai_feedback: g.ai_feedback,
           rubric_breakdown: g.rubric_breakdown || [],
           confidence: g.confidence,
           is_counted: g.is_counted,
         }, { onConflict: 'submission_id,question_id' });
+
+        if (upsertErr) {
+          console.error(`[grade-submission] Upsert failed for ${g.question_label}:`, upsertErr.message);
+          // We continue to next question but log it
+        }
       }
 
       // Aggregate final score
@@ -165,7 +170,7 @@ router.post('/', async (req, res) => {
 
       // Update submissions table with final aggregated score
       await supabase.from('submissions').update({
-        ai_score: finalScore,
+        ai_score: Math.round(finalScore),
         ai_feedback: feedbackSummary,
         grading_status: needsEducatorChoice ? 'grading' : 'aggregated',
       }).eq('id', submissionId);
@@ -185,15 +190,20 @@ router.post('/', async (req, res) => {
       // extract-answers must be run before grade-submission.
       // Log this so we can track which submissions are hitting this path.
       console.warn(
-        `[grade-submission] Blocked: no submission_answers for submission ${submissionId} (assignment ${assignmentId}). ` +
-        `Run POST /api/extract-answers first.`
+        `[grade-submission] Blocked: No submission_answers (n=${submissionAnswers?.length}) or ` +
+        `exam_questions (n=${questions?.length}) found for submission ${submissionId}. ` +
+        `Ensure /api/extract-answers has successfully populated rows for this submission.`
       );
 
       return res.status(400).json({
         error: 'No extracted answers found for this submission. Run extract-answers first.',
         code: 'MISSING_SUBMISSION_ANSWERS',
-        submissionId,
-        assignmentId,
+        details: {
+          submissionId,
+          assignmentId,
+          answersFound: submissionAnswers?.length || 0,
+          questionsFound: questions?.length || 0
+        }
       });
     }
 
