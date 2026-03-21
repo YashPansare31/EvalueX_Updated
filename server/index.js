@@ -14,7 +14,7 @@ if (missing.length > 0) {
 const app = express();
 
 // ── Middleware ─────────────────────────────────────────────────────────────
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'] }));
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080', process.env.FRONTEND_URL].filter(Boolean) }));
 app.use(express.json({ limit: '50mb' }));    // Large limit for base64 image uploads
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -39,6 +39,7 @@ app.use('/api/parse-rubric-pdf',     require('./routes/parseRubricPdf'));
 app.use('/api/extract-answers',      require('./routes/extractAnswers'));
 app.use('/api/grade-question',       require('./routes/gradeQuestion'));
 app.use('/api/aggregate-scores',     require('./routes/aggregateScores'));
+app.use('/api/upload-feedback-pdf',  require('./routes/uploadFeedbackPdf'));
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
@@ -71,5 +72,6 @@ app.listen(PORT, () => {
   console.log('   POST /api/grade-question         (NEW: single question re-grade)');
   console.log('   POST /api/aggregate-scores       (NEW: compute final score)');
   console.log('   GET  /api/aggregate-scores/:id   (NEW: fetch grade breakdown)');
-  console.log('   GET  /api/health\n');
+  console.log('   GET  /api/health');
+  console.log('\n   NOTE: Feedback PDFs are generated client-side and stored in Supabase Storage (feedback-reports bucket)\n');
 });

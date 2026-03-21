@@ -12,7 +12,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Loader2, ChevronDown, ChevronRight, CheckCircle, Edit2, Save, X, RefreshCw, AlertTriangle, Trash2, Download, FileText, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { gradeSubmission, aggregateScores, regradeSingleQuestion } from '@/integrations/api-client';
+import { gradeSubmission, aggregateScores, regradeSingleQuestion, uploadAndStoreFeedbackPdf } from '@/integrations/api-client';
+import { generateFeedbackPdfBlob } from '@/utils/feedbackPdf';
 import jsPDF from 'jspdf';
 import {
   AlertDialog,
@@ -75,6 +76,61 @@ interface Submission {
     max_score: number;
   };
   question_grades?: QuestionGrade[];
+}
+
+/** Button that downloads the stored feedback PDF or regenerates it on demand */
+function FeedbackPdfButton({ sub }: { sub: Submission }) {
+  const [generating, setGenerating] = useState(false);
+
+  const feedbackUrl = (sub as any).feedback_pdf_url as string | null;
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const pdfBlob = generateFeedbackPdfBlob({
+        studentName: sub.student_name,
+        assignmentTitle: sub.assignment.title,
+        finalScore: sub.final_score ?? sub.ai_score ?? 0,
+        maxScore: sub.assignment.max_score,
+        gradedAt: sub.graded_at ?? '',
+        questionGrades: (sub.question_grades || []).map(qg => ({
+          question_label: qg.question_label,
+          ai_score: qg.ai_score,
+          max_score: qg.max_score,
+          ai_feedback: qg.ai_feedback,
+          educator_override: qg.educator_override,
+          confidence: qg.confidence,
+          is_counted: qg.is_counted,
+        })),
+      });
+      const url = await uploadAndStoreFeedbackPdf(sub.id, pdfBlob);
+      window.open(url, '_blank');
+      toast.success('Feedback PDF stored and opened');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to generate feedback PDF');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  if (feedbackUrl) {
+    return (
+      <Button variant="outline" size="sm" asChild>
+        <a href={feedbackUrl} target="_blank" rel="noopener noreferrer">
+          <Download className="h-4 w-4 mr-2" />
+          Download Feedback PDF
+        </a>
+      </Button>
+    );
+  }
+
+  return (
+    <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generating}>
+      {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+      Generate Feedback PDF
+    </Button>
+  );
 }
 
 export default function GradingReview() {
@@ -313,23 +369,52 @@ export default function GradingReview() {
   const approveGrade = async (sub: Submission) => {
     setSavingId(sub.id);
     const finalScore = sub.final_score ?? sub.ai_score;
+    const gradedAt = new Date().toISOString();
 
     const { error } = await supabase
       .from('submissions')
       .update({
         final_score: finalScore,
-        graded_at: new Date().toISOString(),
+        graded_at: gradedAt,
       })
       .eq('id', sub.id);
 
     if (error) {
       toast.error('Failed to approve grade');
-    } else {
-      toast.success('Grade approved and released');
-      setSubmissions(subs => subs.map(s =>
-        s.id === sub.id ? { ...s, final_score: finalScore, graded_at: new Date().toISOString() } : s
-      ));
+      setSavingId(null);
+      return;
     }
+
+    // Generate and store individual feedback PDF in Supabase Storage
+    try {
+      const pdfBlob = generateFeedbackPdfBlob({
+        studentName: sub.student_name,
+        assignmentTitle: sub.assignment.title,
+        finalScore: finalScore ?? 0,
+        maxScore: sub.assignment.max_score,
+        gradedAt,
+        questionGrades: (sub.question_grades || []).map(qg => ({
+          question_label: qg.question_label,
+          ai_score: qg.ai_score,
+          max_score: qg.max_score,
+          ai_feedback: qg.ai_feedback,
+          educator_override: qg.educator_override,
+          confidence: qg.confidence,
+          is_counted: qg.is_counted,
+        })),
+      });
+      await uploadAndStoreFeedbackPdf(sub.id, pdfBlob);
+      toast.success('Grade released & feedback report saved');
+    } catch (pdfErr) {
+      // Don't block the release if PDF generation fails
+      console.error('[approveGrade] PDF generation failed:', pdfErr);
+      toast.success('Grade approved and released');
+      toast.warning('Feedback PDF could not be stored — download manually from Results');
+    }
+
+    setSubmissions(subs => subs.map(s =>
+      s.id === sub.id ? { ...s, final_score: finalScore, graded_at: gradedAt } : s
+    ));
     setSavingId(null);
   };
 
@@ -603,27 +688,33 @@ export default function GradingReview() {
                               )}
 
                               {/* Footer Actions */}
-                              {!sub.graded_at && (
-                                <div className="flex justify-between items-center pt-6 border-t">
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button variant="outline" className="text-destructive hover:bg-destructive hover:text-white"><Trash2 className="h-4 w-4 mr-2" /> Delete Submission</Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader><AlertDialogTitle>Confirm Deletion</AlertDialogTitle></AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => deleteSubmission(sub.id)}>Confirm</AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
+                              <div className="flex justify-between items-center pt-6 border-t">
+                                {!sub.graded_at ? (
+                                  <>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button variant="outline" className="text-destructive hover:bg-destructive hover:text-white"><Trash2 className="h-4 w-4 mr-2" /> Delete Submission</Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader><AlertDialogTitle>Confirm Deletion</AlertDialogTitle></AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction onClick={() => deleteSubmission(sub.id)}>Confirm</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
 
-                                  <Button onClick={() => approveGrade(sub)} disabled={savingId === sub.id} size="lg">
-                                    <CheckCircle className="h-5 w-5 mr-2" />
-                                    Finalize & Release Total Score ({displayScore}/{sub.assignment.max_score})
-                                  </Button>
-                                </div>
-                              )}
+                                    <Button onClick={() => approveGrade(sub)} disabled={savingId === sub.id} size="lg">
+                                      {savingId === sub.id ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <CheckCircle className="h-5 w-5 mr-2" />}
+                                      Finalize & Release Total Score ({displayScore}/{sub.assignment.max_score})
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <div className="flex items-center gap-3 ml-auto">
+                                    <FeedbackPdfButton sub={sub} />
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </CollapsibleContent>
                         </div>
