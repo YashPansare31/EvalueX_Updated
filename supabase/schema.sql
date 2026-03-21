@@ -412,8 +412,54 @@ ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS optional_question_policy
 ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS grading_status TEXT DEFAULT 'pending';
 ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS answer_map JSONB;
 
+-- Add feedback_pdf_url to submissions (stores Supabase Storage public URL)
+ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS feedback_pdf_url TEXT;
+
 -- Add optional_group to exam_questions
 ALTER TABLE public.exam_questions ADD COLUMN IF NOT EXISTS optional_group TEXT;
+
+-- ============================================================
+-- 6c. STORAGE BUCKET — feedback-reports
+-- Run these in Supabase Dashboard > SQL Editor
+-- ============================================================
+
+-- Create the feedback-reports storage bucket (public)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('feedback-reports', 'feedback-reports', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow authenticated users to upload feedback PDFs
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'objects' AND policyname = 'Authenticated users can upload feedback PDFs'
+  ) THEN
+    CREATE POLICY "Authenticated users can upload feedback PDFs"
+    ON storage.objects FOR INSERT
+    WITH CHECK (bucket_id = 'feedback-reports' AND auth.uid() IS NOT NULL);
+  END IF;
+END $$;
+
+-- Allow authenticated users to update (upsert) feedback PDFs
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'objects' AND policyname = 'Authenticated users can update feedback PDFs'
+  ) THEN
+    CREATE POLICY "Authenticated users can update feedback PDFs"
+    ON storage.objects FOR UPDATE
+    USING (bucket_id = 'feedback-reports' AND auth.uid() IS NOT NULL);
+  END IF;
+END $$;
+
+-- Allow public read access to feedback PDFs
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'objects' AND policyname = 'Feedback PDFs are publicly readable'
+  ) THEN
+    CREATE POLICY "Feedback PDFs are publicly readable"
+    ON storage.objects FOR SELECT
+    USING (bucket_id = 'feedback-reports');
+  END IF;
+END $$;
 
 -- ============================================================
 -- 7. SUBMISSION ANSWERS TABLE (QCP pipeline)

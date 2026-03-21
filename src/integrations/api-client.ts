@@ -198,3 +198,43 @@ export async function fetchAggregateScores(
   if (!response.ok) throw new Error((await response.json()).error);
   return response.json();
 }
+
+/**
+ * Upload a feedback PDF blob via the backend (which uses the service-role key).
+ * This is more reliable than uploading directly from the browser, which requires
+ * precise Storage RLS policies to be configured on the Supabase Dashboard.
+ * Returns the public URL of the stored PDF.
+ */
+export async function uploadAndStoreFeedbackPdf(
+  submissionId: string,
+  pdfBlob: Blob
+): Promise<string> {
+  const token = await getAuthToken();
+
+  // Convert Blob → base64 string to send via JSON
+  const arrayBuffer = await pdfBlob.arrayBuffer();
+  const uint8 = new Uint8Array(arrayBuffer);
+  let binary = '';
+  for (let i = 0; i < uint8.length; i++) {
+    binary += String.fromCharCode(uint8[i]);
+  }
+  const pdfBase64 = btoa(binary);
+
+  const response = await fetch(`${API_BASE_URL}/api/upload-feedback-pdf`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ submissionId, pdfBase64 }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  const { url } = await response.json();
+  return url;
+}
+
