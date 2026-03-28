@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { PageLoader } from '@/components/ui/PageLoader';
 import { 
   Plus, 
   FileText, 
@@ -202,13 +203,7 @@ export default function Dashboard() {
     ? Math.round(assignments.filter(a => a.avg_score && a.avg_score > 0).reduce((acc, a) => acc + (a.avg_score || 0), 0) / assignments.filter(a => a.avg_score && a.avg_score > 0).length)
     : 0;
 
-  if (authLoading || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (authLoading || loading) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">

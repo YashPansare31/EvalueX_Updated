@@ -18,6 +18,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { PageLoader } from '@/components/ui/PageLoader';
 
 interface Question {
   id: string;
@@ -359,13 +360,7 @@ export default function UploadExam() {
 
 
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">

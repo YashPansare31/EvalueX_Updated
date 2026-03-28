@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, ArrowLeft, FileText, Users, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import { PageLoader } from '@/components/ui/PageLoader';
 
 interface Assignment {
   id: string;
@@ -95,13 +96,7 @@ export default function ClassDetail() {
     }
   };
 
-  if (loading || loadingData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading || loadingData) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">

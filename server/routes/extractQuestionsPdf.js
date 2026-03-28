@@ -1,11 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const { extractQuestionsFromPdfText } = require('../services/geminiService');
-
-const upload = multer({ storage: multer.memoryStorage() });
-
-const pdf = require('pdf-parse');
+const { upload } = require('../utils/multerUpload');
+const { parsePdfBuffer } = require('../utils/pdfParser');
+const { handleGeminiError, requireGeminiKey } = require('../utils/geminiErrors');
 
 // POST /api/extract-questions-pdf
 // BACKWARD COMPATIBLE — preserves existing frontend contract in UploadExam.tsx
@@ -17,23 +15,9 @@ router.post('/', upload.single('file'), async (req, res) => {
             return res.status(400).json({ error: 'No PDF file uploaded' });
         }
 
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
-        }
+        if (requireGeminiKey(res)) return;
 
-        // Parse the PDF using standard pdf-parse
-        let pdfText = '';
-        try {
-            const pdfData = await pdf(req.file.buffer);
-            pdfText = pdfData.text;
-        } catch (pdfErr) {
-            console.error('PDF parsing error:', pdfErr);
-            return res.status(400).json({ error: 'Failed to parse PDF content. Ensure it is a valid PDF.' });
-        }
-
-        if (!pdfText.trim()) {
-            return res.status(400).json({ error: 'Appears to be an empty or unreadable PDF' });
-        }
+        const pdfText = await parsePdfBuffer(req.file.buffer);
 
         let questionsArray = await extractQuestionsFromPdfText(pdfText);
 
@@ -48,18 +32,7 @@ router.post('/', upload.single('file'), async (req, res) => {
             questions: questionsArray,
         });
     } catch (error) {
-        console.error('[extract-questions-pdf] Error:', error.message);
-
-        if (error.message?.includes('API key')) {
-            return res.status(500).json({ error: 'Invalid Gemini API key' });
-        }
-        if (error.message?.includes('rate')) {
-            return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
-        }
-
-        return res.status(500).json({
-            error: error.message || 'Unknown PDF extraction error',
-        });
+        return handleGeminiError(error, res, '[extract-questions-pdf]');
     }
 });
 

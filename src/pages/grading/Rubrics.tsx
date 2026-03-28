@@ -22,6 +22,7 @@ import { Loader2, BookOpen, Plus, FileText, Upload, Trash2 } from 'lucide-react'
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { PageLoader } from '@/components/ui/PageLoader';
 
 export default function Rubrics() {
   const { user, loading } = useAuth();
@@ -204,13 +205,7 @@ export default function Rubrics() {
     }
   };
 
-  if (loading || fetching) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading || fetching) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">

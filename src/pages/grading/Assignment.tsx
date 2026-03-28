@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/layout/Header';
 import { ArrowLeft, Plus, Sparkles, CheckCircle2, Clock, Loader2, User, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { PageLoader } from '@/components/ui/PageLoader';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -223,13 +224,7 @@ export default function AssignmentPage() {
     setDeletingAssignment(false);
   };
 
-  if (authLoading || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (authLoading || loading) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background">

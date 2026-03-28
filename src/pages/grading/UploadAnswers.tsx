@@ -16,6 +16,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { extractAnswers, gradeSubmission } from '@/integrations/api-client';
+import { formatFileSize } from '@/utils/helpers';
+import { PageLoader } from '@/components/ui/PageLoader';
 import {
   Dialog,
   DialogContent,
@@ -304,11 +306,6 @@ export default function UploadAnswers() {
     setIsProcessing(false);
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  };
 
   const getFileIcon = (type: string) => {
     if (type.startsWith('image/')) return ImageIcon;
@@ -346,13 +343,7 @@ export default function UploadAnswers() {
   const completedCount = uploadedFiles.filter(f => f.status === 'complete').length;
   const errorCount = uploadedFiles.filter(f => f.status === 'error').length;
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">

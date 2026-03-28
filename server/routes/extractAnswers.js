@@ -1,14 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const supabase = require('../services/supabaseClient');
-const { detectAnswerLayout, extractSingleAnswerText, flattenQuestions } = require('../services/geminiService');
-
-function sanitizeExtractedText(text) {
-  if (!text) return text;
-  // Regex to remove the recurring college header with optional trailing numbers (relaxed to account for slight OCR variations)
-  const regex = /AISSMS\s+INSTITUTE\s+OF[\s\S]*?Pune\s+University\s*\d*/gi;
-  return text.replace(regex, '').trim();
-}
+const { detectAnswerLayout, extractSingleAnswerText } = require('../services/geminiService');
+const { sanitizeExtractedText } = require('../utils/sanitize');
+const { fetchExamQuestionsWithLabels, updateSubmissionStatus } = require('../utils/dbHelpers');
 
 // POST /api/extract-answers
 // Accepts: { submissionId, assignmentId, pages: string[] (base64, one per page), mimeType? }
@@ -25,27 +20,17 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    // Fetch structured questions from DB
-    const { data: questionsRaw, error: qErr } = await supabase
-      .from('exam_questions')
-      .select('id, question_text, points, question_order, optional_group')
-      .eq('assignment_id', assignmentId)
-      .order('question_order', { ascending: true });
+    // Fetch structured questions with labels from DB
+    const questionsWithLabels = await fetchExamQuestionsWithLabels(assignmentId);
 
-    if (qErr || !questionsRaw || questionsRaw.length === 0) {
+    if (!questionsWithLabels || questionsWithLabels.length === 0) {
       return res.status(400).json({
         error: 'No questions found for this assignment. Run /api/parse-question-paper first, or add questions manually.',
       });
     }
 
-    // Build question list with labels for the AI prompt
-    const questionsWithLabels = questionsRaw.map((q, idx) => ({
-      ...q,
-      question_label: `Q${idx + 1}`,
-    }));
-
     // Mark grading status
-    await supabase.from('submissions').update({ grading_status: 'extracting' }).eq('id', submissionId);
+    await updateSubmissionStatus(submissionId, 'extracting');
 
     // ── PASS 2A: Layout Detection ──────────────────────────────────────────
     const layoutResult = await detectAnswerLayout(pages, questionsWithLabels, mimeType);
@@ -162,7 +147,7 @@ router.post('/', async (req, res) => {
     }
 
     // Reset status to pending (ready for grading)
-    await supabase.from('submissions').update({ grading_status: 'pending' }).eq('id', submissionId);
+    await updateSubmissionStatus(submissionId, 'pending');
 
     return res.json({
       answer_map: answerMap,
@@ -177,7 +162,7 @@ router.post('/', async (req, res) => {
 
   } catch (err) {
     console.error('[extract-answers] Fatal error:', err.message);
-    await supabase.from('submissions').update({ grading_status: 'pending' }).eq('id', submissionId).catch(() => { });
+    await updateSubmissionStatus(submissionId, 'pending').catch(() => { });
     return res.status(500).json({ error: 'Answer extraction failed', details: err.message });
   }
 });
