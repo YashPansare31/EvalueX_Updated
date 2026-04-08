@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
-import { 
-  LayoutDashboard, 
-  Upload, 
-  FileText, 
-  BarChart3, 
-  Users, 
-  BookOpen, 
+import {
+  LayoutDashboard,
+  Upload,
+  FileText,
+  BarChart3,
+  Users,
+  BookOpen,
   ChevronLeft,
   Settings,
   LogOut,
@@ -20,6 +20,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
@@ -44,18 +45,18 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
     navigate('/');
   };
 
-  const userInitial = user?.email?.charAt(0).toUpperCase() || 'U';
-  const userName = user?.email?.split('@')[0] || 'User';
+  const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User';
+  const userInitial = displayName.charAt(0).toUpperCase();
 
   return (
-    <aside 
+    <aside
       className={cn(
         "fixed left-0 top-0 h-screen bg-sidebar flex flex-col border-r border-sidebar-border transition-all duration-300 z-50",
         collapsed ? "w-[72px]" : "w-[260px]"
@@ -68,11 +69,11 @@ export function Sidebar() {
             <BookOpen className="h-5 w-5 text-accent-foreground" />
           </div>
           {!collapsed && (
-            <span className="font-bold text-lg text-sidebar-foreground">GradeAI</span>
+            <span className="font-bold text-lg text-sidebar-foreground">EvalueX</span>
           )}
         </div>
         {!collapsed && (
-          <button 
+          <button
             onClick={() => setCollapsed(true)}
             className="p-1.5 rounded-lg hover:bg-sidebar-accent transition-colors"
           >
@@ -84,9 +85,9 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path || 
+          const isActive = location.pathname === item.path ||
             (item.path === '/dashboard' && location.pathname.startsWith('/assignment'));
-          
+
           return (
             <button
               key={item.path}
@@ -94,8 +95,8 @@ export function Sidebar() {
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
                 collapsed && "justify-center px-2",
-                isActive 
-                  ? "bg-accent text-accent-foreground font-medium" 
+                isActive
+                  ? "bg-accent text-accent-foreground font-medium"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
               )}
             >
@@ -109,7 +110,7 @@ export function Sidebar() {
       {/* Expand button when collapsed */}
       {collapsed && (
         <div className="p-3">
-          <button 
+          <button
             onClick={() => setCollapsed(false)}
             className="w-full p-2 rounded-lg hover:bg-sidebar-accent transition-colors flex items-center justify-center"
           >
@@ -122,7 +123,7 @@ export function Sidebar() {
       <div className="p-3 border-t border-sidebar-border">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button 
+            <button
               className={cn(
                 "w-full flex items-center gap-3 p-2 rounded-lg hover:bg-sidebar-accent transition-colors",
                 collapsed && "justify-center"
@@ -135,8 +136,8 @@ export function Sidebar() {
               </Avatar>
               {!collapsed && (
                 <div className="flex-1 text-left">
-                  <p className="text-sm font-medium text-sidebar-foreground truncate">{userName}</p>
-                  <p className="text-xs text-sidebar-foreground/60">Educator</p>
+                  <p className="text-sm font-medium text-sidebar-foreground truncate">{displayName}</p>
+                  <p className="text-xs text-sidebar-foreground/60 truncate">{user?.email}</p>
                 </div>
               )}
               {!collapsed && (
@@ -145,6 +146,11 @@ export function Sidebar() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={() => navigate('/settings')}>
+              <Settings className="h-4 w-4 mr-2" />
+              Settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
               <LogOut className="h-4 w-4 mr-2" />
               Sign out

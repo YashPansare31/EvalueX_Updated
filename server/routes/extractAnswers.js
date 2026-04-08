@@ -39,12 +39,13 @@ router.post('/', async (req, res) => {
     // Save answer_map to submissions table
     await supabase.from('submissions').update({ answer_map: answerMap }).eq('id', submissionId);
 
-    // ── PASS 2B: Targeted Extraction (run for each question in parallel) ──
-    const extractionPromises = answerMap.map(async (mapEntry) => {
-      if (!mapEntry.attempted) return null;
+    // ── PASS 2B: Targeted Extraction (sequential — one question at a time to avoid rate limits) ──
+    const extractedAnswers = [];
+    for (const mapEntry of answerMap) {
+      if (!mapEntry.attempted) continue;
 
       const question = questionsWithLabels.find(q => q.question_label === mapEntry.question_label);
-      if (!question) return null;
+      if (!question) continue;
 
       // Collect only the relevant pages for this answer
       const relevantPages = (mapEntry.page_refs || [])
@@ -67,7 +68,7 @@ router.post('/', async (req, res) => {
 
         extractedText = sanitizeExtractedText(extractedText);
 
-        return {
+        extractedAnswers.push({
           submission_id: submissionId,
           question_id: question.id,
           question_label: mapEntry.question_label,
@@ -76,21 +77,22 @@ router.post('/', async (req, res) => {
           page_numbers: (mapEntry.page_refs || []).map(ref => ref.page),
           // DB column is confidence (numeric)
           confidence: extractedText.includes('[ILLEGIBLE]') ? 0.6 : 0.9,
-        };
+        });
+
+        // Small delay to prevent overwhelming fetch/rate-limits
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (err) {
         console.error(`[extract-answers] Failed Pass 2B for ${mapEntry.question_label}:`, err.message);
-        return {
+        extractedAnswers.push({
           submission_id: submissionId,
           question_id: question.id,
           question_label: mapEntry.question_label,
           extracted_text: '[EXTRACTION FAILED — MANUAL REVIEW REQUIRED]',
           page_numbers: (mapEntry.page_refs || []).map(ref => ref.page),
           confidence: 0.0,
-        };
+        });
       }
-    });
-
-    const extractedAnswers = (await Promise.all(extractionPromises)).filter(Boolean);
+    }
 
     // ── PASS 2B FALLBACK: catch questions that Pass 2A missed entirely ─────
     // Any question in the DB that has NO entry in answer_map at all (not even attempted:false)
@@ -100,7 +102,8 @@ router.post('/', async (req, res) => {
 
     if (orphanedQuestions.length > 0) {
       console.log(`[extract-answers] Pass 2A missed ${orphanedQuestions.length} question(s): ${orphanedQuestions.map(q => q.question_label).join(', ')} — running fallback extraction on all pages`);
-      const fallbackPromises = orphanedQuestions.map(async (question) => {
+      const fallbackAnswers = [];
+      for (const question of orphanedQuestions) {
         try {
           let extractedText = await extractSingleAnswerText(
             pages,
@@ -111,23 +114,24 @@ router.post('/', async (req, res) => {
           extractedText = sanitizeExtractedText(extractedText);
 
           // Only store if we actually found something (not [NO ANSWER FOUND])
-          if (!extractedText || extractedText.trim() === '[NO ANSWER FOUND]') return null;
+          if (!extractedText || extractedText.trim() === '[NO ANSWER FOUND]') continue;
 
-          return {
+          fallbackAnswers.push({
             submission_id: submissionId,
             question_id: question.id,
             question_label: question.question_label,
             extracted_text: extractedText,
             page_numbers: pages.map((_, i) => i + 1), // all pages
             confidence: extractedText.includes('[ILLEGIBLE]') ? 0.6 : 0.85,
-          };
+          });
+
+          // Small delay to prevent overwhelming fetch/rate-limits
+          await new Promise(resolve => setTimeout(resolve, 500));
         } catch (err) {
           console.error(`[extract-answers] Fallback extraction failed for ${question.question_label}:`, err.message);
-          return null;
         }
-      });
+      }
 
-      const fallbackAnswers = (await Promise.all(fallbackPromises)).filter(Boolean);
       extractedAnswers.push(...fallbackAnswers);
 
       if (fallbackAnswers.length > 0) {

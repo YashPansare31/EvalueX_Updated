@@ -109,11 +109,7 @@ export default function UploadAnswers() {
 
   const handleFiles = (files: File[]) => {
     const validTypes = [
-      'application/pdf', 
-      'image/jpeg', 
-      'image/png', 
-      'image/gif',
-      'image/webp'
+      'application/pdf'
     ];
     
     const newFiles: UploadedFile[] = [];
@@ -401,7 +397,7 @@ export default function UploadAnswers() {
                   <Upload className="h-5 w-5" />
                   Upload Answer Sheets
                 </CardTitle>
-                <CardDescription>Drag and drop or click to upload PDFs and images</CardDescription>
+                <CardDescription>Drag and drop or click to upload PDFs</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div 
@@ -419,7 +415,7 @@ export default function UploadAnswers() {
                     id="answer-file-input"
                     type="file"
                     multiple
-                    accept=".pdf,image/*"
+                    accept=".pdf"
                     className="hidden"
                     onChange={handleFileInput}
                   />
@@ -439,9 +435,6 @@ export default function UploadAnswers() {
                     <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <FileText className="h-4 w-4" /> PDF
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <ImageIcon className="h-4 w-4" /> JPG, PNG, GIF
                       </span>
                       <span>Max 10MB each</span>
                     </div>

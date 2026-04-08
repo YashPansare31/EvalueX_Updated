@@ -2,27 +2,24 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { PageLoader } from '@/components/ui/PageLoader';
-import { 
-  Plus, 
-  FileText, 
-  Clock, 
-  Loader2, 
-  Users, 
-  TrendingUp, 
-  Upload, 
+import {
+  Plus,
+  FileText,
+  Clock,
+  Loader2,
+  Users,
+  TrendingUp,
+  Upload,
   BarChart3,
   ArrowRight,
   ArrowUpRight,
-  Trash2
+  Trash2,
+  Pencil
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import {
@@ -49,20 +46,15 @@ interface Assignment {
 }
 
 export default function Dashboard() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, profile } = useAuth();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [newMaxScore, setNewMaxScore] = useState('100');
   const [totalStudents, setTotalStudents] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const userName = user?.email?.split('@')[0] || 'User';
+  const userName = profile?.full_name || user?.email?.split('@')[0] || 'User';
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -133,37 +125,6 @@ export default function Dashboard() {
     }
 
     setLoading(false);
-  };
-
-  const handleCreateAssignment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreating(true);
-
-    const { error } = await supabase.from('assignments').insert({
-      title: newTitle,
-      description: newDescription || null,
-      max_score: parseInt(newMaxScore) || 100,
-      user_id: user?.id,
-    });
-
-    if (error) {
-      toast({
-        title: 'Error creating assignment',
-        description: error.message,
-        variant: 'destructive',
-      });
-    } else {
-      toast({
-        title: 'Assignment created!',
-        description: 'You can now add student submissions.',
-      });
-      setCreateOpen(false);
-      setNewTitle('');
-      setNewDescription('');
-      setNewMaxScore('100');
-      fetchAssignments();
-    }
-    setCreating(false);
   };
 
   const handleDeleteAssignment = async (assignmentId: string, e: React.MouseEvent) => {
@@ -289,10 +250,15 @@ export default function Dashboard() {
                     <p className="text-sm text-muted-foreground mb-1">Average Score</p>
                     <p className="text-4xl font-bold text-foreground">{avgOverall > 0 ? `${avgOverall}%` : '-'}</p>
                     <p className="text-sm text-muted-foreground mt-1">Class average</p>
-                    {avgOverall > 0 && (
+                    {avgOverall > 0 ? (
                       <p className="text-xs text-success flex items-center gap-1 mt-2">
                         <ArrowUpRight className="h-3 w-3" />
                         5% vs last month
+                      </p>
+                    ) : (
+                      <p className="text-xs opacity-0 flex items-center gap-1 mt-2 select-none pointer-events-none">
+                        <ArrowUpRight className="h-3 w-3" />
+                        placeholder
                       </p>
                     )}
                   </div>
@@ -316,6 +282,10 @@ export default function Dashboard() {
                     <p className="text-sm text-muted-foreground mb-1">Pending</p>
                     <p className="text-4xl font-bold text-foreground">{pendingCount}</p>
                     <p className="text-sm text-muted-foreground mt-1">Exams to grade</p>
+                    <p className="text-xs opacity-0 flex items-center gap-1 mt-2 select-none pointer-events-none">
+                      <ArrowUpRight className="h-3 w-3" />
+                      placeholder
+                    </p>
                   </div>
                   <div className="h-12 w-12 rounded-xl bg-warning/10 flex items-center justify-center">
                     <Clock className="h-6 w-6 text-warning" />
@@ -338,69 +308,18 @@ export default function Dashboard() {
               <CardTitle className="text-lg">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                <DialogTrigger asChild>
-                  <button className="w-full flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors group">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
-                        <Upload className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <span className="font-medium text-foreground">Upload New Exam</span>
-                    </div>
-                    <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
-                  </button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create New Assignment</DialogTitle>
-                    <DialogDescription>
-                      Add a new assignment to start collecting and grading submissions.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleCreateAssignment} className="space-y-4 mt-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="title">Title</Label>
-                      <Input
-                        id="title"
-                        placeholder="Essay on Climate Change"
-                        value={newTitle}
-                        onChange={(e) => setNewTitle(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="description">Description (optional)</Label>
-                      <Textarea
-                        id="description"
-                        placeholder="Describe the assignment requirements..."
-                        value={newDescription}
-                        onChange={(e) => setNewDescription(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="maxScore">Max Score</Label>
-                      <Input
-                        id="maxScore"
-                        type="number"
-                        placeholder="100"
-                        value={newMaxScore}
-                        onChange={(e) => setNewMaxScore(e.target.value)}
-                        min="1"
-                      />
-                    </div>
-                    <Button type="submit" variant="hero" className="w-full" disabled={creating}>
-                      {creating ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Creating...
-                        </>
-                      ) : (
-                        'Create Assignment'
-                      )}
-                    </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
+              <button
+                onClick={() => navigate('/upload')}
+                className="w-full flex items-center justify-between p-4 rounded-lg border border-border hover:bg-muted/50 transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                    <Upload className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <span className="font-medium text-foreground">Upload New Exam</span>
+                </div>
+                <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+              </button>
 
               <button 
                 onClick={() => navigate('/results')}
@@ -453,7 +372,7 @@ export default function Dashboard() {
                 <p className="text-sm text-muted-foreground mb-4 text-center">
                   Create your first assignment to start grading with AI.
                 </p>
-                <Button variant="hero" onClick={() => setCreateOpen(true)}>
+                <Button variant="hero" onClick={() => navigate('/upload')}>
                   <Plus className="h-4 w-4 mr-2" />
                   Create Assignment
                 </Button>
@@ -490,12 +409,24 @@ export default function Dashboard() {
                               <span className="text-sm font-bold text-accent">{assignment.avg_score}%</span>
                             </div>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-accent"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/upload/${assignment.id}`);
+                            }}
+                            title="Edit exam setup"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <Trash2 className="h-4 w-4" />

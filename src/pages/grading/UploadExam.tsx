@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -36,6 +36,8 @@ interface Class {
 export default function UploadExam() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const { id: assignmentId } = useParams<{ id: string }>();
+  const isEditMode = !!assignmentId;
 
   // Form state
   const [examTitle, setExamTitle] = useState('');
@@ -53,6 +55,7 @@ export default function UploadExam() {
   const [rubricsList, setRubricsList] = useState<any[]>([]);
   const [selectedRubricId, setSelectedRubricId] = useState('');
   const [loadingRubrics, setLoadingRubrics] = useState(false);
+  const [loadingExam, setLoadingExam] = useState(isEditMode);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -60,8 +63,70 @@ export default function UploadExam() {
     } else if (user) {
       fetchClasses();
       fetchRubrics();
+      if (isEditMode && assignmentId) {
+        fetchExamData(assignmentId);
+      }
     }
   }, [user, loading, navigate]);
+
+  const fetchExamData = async (id: string) => {
+    try {
+      setLoadingExam(true);
+
+      // Fetch assignment
+      const { data: assignment, error: aErr } = await supabase
+        .from('assignments')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (aErr) throw aErr;
+
+      setExamTitle(assignment.title || '');
+      setExamDescription(assignment.description || '');
+      setMaxScore(assignment.max_score || 100);
+
+      // Fetch questions
+      const { data: examQuestions, error: qErr } = await supabase
+        .from('exam_questions')
+        .select('*')
+        .eq('assignment_id', id)
+        .order('question_order');
+      if (qErr) throw qErr;
+
+      if (examQuestions && examQuestions.length > 0) {
+        setQuestions(examQuestions.map(q => ({
+          id: q.id,
+          text: q.question_text || '',
+          points: q.points || 10,
+          modelAnswer: q.model_answer || undefined
+        })));
+      }
+
+      // Fetch assigned classes
+      const { data: classLinks, error: clErr } = await supabase
+        .from('assignment_classes')
+        .select('class_id')
+        .eq('assignment_id', id);
+      if (clErr) throw clErr;
+      setSelectedClassIds((classLinks || []).map(c => c.class_id));
+
+      // Fetch rubric
+      const { data: rubric, error: rErr } = await supabase
+        .from('exam_rubrics')
+        .select('*')
+        .eq('assignment_id', id)
+        .maybeSingle();
+      if (!rErr && rubric) {
+        // We'll set the rubric id after rubrics list loads
+        // Store rubric content temporarily to match after rubricsList is ready
+        setSelectedRubricId('__pending__' + rubric.rubric_content);
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to load exam data');
+    } finally {
+      setLoadingExam(false);
+    }
+  };
 
   const fetchRubrics = async () => {
     try {
@@ -71,9 +136,19 @@ export default function UploadExam() {
         .select('*')
         .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
-        
+
       if (error) throw error;
       setRubricsList(data || []);
+
+      // Resolve pending rubric selection if in edit mode
+      setSelectedRubricId(prev => {
+        if (prev.startsWith('__pending__')) {
+          const content = prev.replace('__pending__', '');
+          const matched = (data || []).find(r => r.content === content);
+          return matched ? matched.id : '';
+        }
+        return prev;
+      });
     } catch (error) {
       console.error('Error fetching rubrics:', error);
     } finally {
@@ -245,7 +320,7 @@ export default function UploadExam() {
     }
   };
 
-  // Save exam template
+  // Save or update exam template
   const handleSave = async () => {
     if (!examTitle.trim()) {
       toast.error('Please enter an exam title');
@@ -256,24 +331,56 @@ export default function UploadExam() {
 
     setIsSaving(true);
     try {
-      // First create the assignment
-      const { data: assignment, error: assignmentError } = await supabase
-        .from('assignments')
-        .insert({
-          user_id: user.id,
-          title: examTitle,
-          description: examDescription,
-          max_score: maxScore
-        })
-        .select()
-        .single();
+      let targetId: string;
 
-      if (assignmentError) throw assignmentError;
+      if (isEditMode && assignmentId) {
+        // Update existing assignment
+        const { error: updateError } = await supabase
+          .from('assignments')
+          .update({
+            title: examTitle,
+            description: examDescription,
+            max_score: maxScore
+          })
+          .eq('id', assignmentId);
+
+        if (updateError) throw updateError;
+        targetId = assignmentId;
+
+        // Remove old class mappings, questions, model_answers, and rubric then re-insert
+        await supabase.from('assignment_classes').delete().eq('assignment_id', targetId);
+        // Get existing question ids before deleting
+        const { data: oldQuestions } = await supabase
+          .from('exam_questions')
+          .select('id')
+          .eq('assignment_id', targetId);
+        if (oldQuestions && oldQuestions.length > 0) {
+          const oldIds = oldQuestions.map(q => q.id);
+          await supabase.from('model_answers').delete().in('question_id', oldIds);
+        }
+        await supabase.from('exam_questions').delete().eq('assignment_id', targetId);
+        await supabase.from('exam_rubrics').delete().eq('assignment_id', targetId);
+      } else {
+        // Create new assignment
+        const { data: assignment, error: assignmentError } = await supabase
+          .from('assignments')
+          .insert({
+            user_id: user.id,
+            title: examTitle,
+            description: examDescription,
+            max_score: maxScore
+          })
+          .select()
+          .single();
+
+        if (assignmentError) throw assignmentError;
+        targetId = assignment.id;
+      }
 
       // Attach classes
       if (selectedClassIds.length > 0) {
         const classMappings = selectedClassIds.map(classId => ({
-          assignment_id: assignment.id,
+          assignment_id: targetId,
           class_id: classId
         }));
 
@@ -288,7 +395,7 @@ export default function UploadExam() {
       const validQuestions = questions.filter(q => q.text.trim());
       if (validQuestions.length > 0) {
         const questionsToInsert = validQuestions.map((q, index) => ({
-          assignment_id: assignment.id,
+          assignment_id: targetId,
           question_text: q.text,
           points: q.points,
           model_answer: q.modelAnswer || null,
@@ -305,11 +412,10 @@ export default function UploadExam() {
         // Save to model_answers table for the QCP pipeline
         const modelAnswersToInsert = validQuestions.map((q, i) => {
           if (!q.modelAnswer?.trim()) return null;
-          // Find the corresponding inserted question
           const insertedQ = insertedQuestions?.find(iq => iq.question_text === q.text && iq.question_order === i);
           if (!insertedQ) return null;
           return {
-            assignment_id: assignment.id,
+            assignment_id: targetId,
             question_id: insertedQ.id,
             answer_text: q.modelAnswer.trim()
           };
@@ -319,19 +425,19 @@ export default function UploadExam() {
           const { error: maError } = await supabase
             .from('model_answers')
             .insert(modelAnswersToInsert);
-          
+
           if (maError) throw maError;
         }
       }
 
       // Save rubric link if selected
-      if (selectedRubricId) {
+      if (selectedRubricId && !selectedRubricId.startsWith('__pending__')) {
         const selectedRubric = rubricsList.find(r => r.id === selectedRubricId);
         if (selectedRubric) {
           const { error: rubricError } = await supabase
             .from('exam_rubrics')
             .insert({
-              assignment_id: assignment.id,
+              assignment_id: targetId,
               rubric_content: selectedRubric.content || ''
             });
 
@@ -339,7 +445,7 @@ export default function UploadExam() {
         }
       }
 
-      toast.success('Exam template saved successfully!');
+      toast.success(isEditMode ? 'Exam updated successfully!' : 'Exam template saved successfully!');
       navigate('/dashboard');
     } catch (error: any) {
       console.error('Error saving exam:', error);
@@ -360,7 +466,7 @@ export default function UploadExam() {
 
 
 
-  if (loading) return <PageLoader />;
+  if (loading || loadingExam) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -373,12 +479,16 @@ export default function UploadExam() {
           className="flex items-center justify-between mb-8"
         >
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-1">Exam Setup</h1>
-            <p className="text-muted-foreground">Create exam templates with questions and rubrics</p>
+            <h1 className="text-3xl font-bold text-foreground mb-1">
+              {isEditMode ? 'Edit Exam' : 'Exam Setup'}
+            </h1>
+            <p className="text-muted-foreground">
+              {isEditMode ? 'Update exam details, questions and rubric' : 'Create exam templates with questions and rubrics'}
+            </p>
           </div>
           <Button onClick={handleSave} disabled={isSaving} className="gap-2">
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save Template
+            {isEditMode ? 'Update Exam' : 'Save Template'}
           </Button>
         </motion.div>
 

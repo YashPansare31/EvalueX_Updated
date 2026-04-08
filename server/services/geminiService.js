@@ -12,9 +12,16 @@ async function callGeminiWithRetry(fn, maxRetries = 3) {
     try {
       return await fn();
     } catch (err) {
-      if (err.message.includes('429') && attempt < maxRetries) {
-        const waitTime = attempt * 12000; // 12s, 24s, 36s
-        console.log(`Rate limited, waiting ${waitTime / 1000}s before retry ${attempt}/${maxRetries}`);
+      const isRetryable = err.message.includes('429') || 
+                          err.message.includes('fetch failed') || 
+                          err.message.includes('503') || 
+                          err.message.includes('500') ||
+                          err.message.includes('502') ||
+                          err.message.includes('ECONNRESET');
+
+      if (isRetryable && attempt < maxRetries) {
+        const waitTime = attempt * 8000; // 8s, 16s...
+        console.log(`[Gemini API] Transient error (${err.message}). Waiting ${waitTime / 1000}s before retry ${attempt}/${maxRetries}`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       } else {
         throw err;
@@ -73,7 +80,7 @@ Return ONLY this JSON structure, no explanation:
   ]
 }`;
 
-  const result = await model.generateContent([prompt, ...imageParts]);
+  const result = await callGeminiWithRetry(() => model.generateContent([prompt, ...imageParts]));
   const text = result.response.text();
 
   try {
@@ -153,7 +160,7 @@ Return ONLY this JSON structure:
   ]
 }`;
 
-  const result = await model.generateContent([prompt, ...imageParts]);
+  const result = await callGeminiWithRetry(() => model.generateContent([prompt, ...imageParts]));
   const text = result.response.text();
 
   try {
@@ -222,10 +229,10 @@ async function extractTextFromImage(base64Image, mimeType = 'image/jpeg') {
 
   const prompt = `Extract ALL text from this image exactly as written. Preserve paragraph breaks and line structure. Transcribe handwritten text accurately. Return only the extracted text, no commentary.`;
 
-  const result = await model.generateContent([
+  const result = await callGeminiWithRetry(() => model.generateContent([
     prompt,
     { inlineData: { data: stripBase64Prefix(base64Image), mimeType } },
-  ]);
+  ]));
 
   return result.response.text();
 }
@@ -273,7 +280,7 @@ RULES:
 EXAM TEXT:
 ${pdfText}`;
 
-  const result = await model.generateContent(prompt);
+  const result = await callGeminiWithRetry(() => model.generateContent(prompt));
   const text = result.response.text();
 
   try {
@@ -315,7 +322,7 @@ RULES:
 MODEL ANSWER SHEET TEXT:
 ${pdfText}`;
 
-  const result = await model.generateContent(prompt);
+  const result = await callGeminiWithRetry(() => model.generateContent(prompt));
   const text = result.response.text();
 
   try {
