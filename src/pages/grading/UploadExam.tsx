@@ -25,6 +25,7 @@ interface Question {
   text: string;
   points: number;
   modelAnswer?: string;
+  question_label?: string;
 }
 
 
@@ -98,7 +99,8 @@ export default function UploadExam() {
           id: q.id,
           text: q.question_text || '',
           points: q.points || 10,
-          modelAnswer: q.model_answer || undefined
+          modelAnswer: q.model_answer || undefined,
+          question_label: q.question_label || undefined,
         })));
       }
 
@@ -227,11 +229,12 @@ export default function UploadExam() {
       const data = await response.json();
 
       if (data.success && data.questions && data.questions.length > 0) {
-        // Map data to the Question type
+        // Map data to the Question type — include question_label so it gets saved to DB
         const newQuestions = data.questions.map((q: any) => ({
           id: crypto.randomUUID(),
           text: q.text || '',
-          points: q.points || 10
+          points: q.points || 10,
+          question_label: q.question_label || undefined,
         }));
 
         // Remove empty first question if replacing it
@@ -399,7 +402,8 @@ export default function UploadExam() {
           question_text: q.text,
           points: q.points,
           model_answer: q.modelAnswer || null,
-          question_order: index
+          question_order: index,
+          question_label: q.question_label || null,
         }));
 
         const { data: insertedQuestions, error: questionsError } = await supabase

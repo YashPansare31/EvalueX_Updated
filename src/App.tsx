@@ -14,6 +14,7 @@ import UploadExam from "./pages/grading/UploadExam";
 import UploadAnswers from "./pages/grading/UploadAnswers";
 import Results from "./pages/dashboard/Results";
 import Analytics from "./pages/dashboard/Analytics";
+import Assignments from "./pages/dashboard/Assignments";
 import Classes from "./pages/dashboard/Classes";
 import ClassDetail from "./pages/dashboard/ClassDetail";
 import Rubrics from "./pages/grading/Rubrics";
@@ -42,6 +43,7 @@ const App = () => (
               <Route path="/upload-answers" element={<UploadAnswers />} />
               <Route path="/results" element={<Results />} />
               <Route path="/analytics" element={<Analytics />} />
+              <Route path="/assignments" element={<Assignments />} />
               <Route path="/classes" element={<Classes />} />
               <Route path="/classes/:id" element={<ClassDetail />} />
               <Route path="/rubrics" element={<Rubrics />} />

@@ -13,7 +13,8 @@ import {
   Settings,
   LogOut,
   FileUp,
-  ClipboardCheck
+  ClipboardCheck,
+  ClipboardList
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -32,6 +33,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+  { icon: ClipboardList, label: 'Assignments', path: '/assignments' },
   { icon: Upload, label: 'Exam Setup', path: '/upload' },
   { icon: FileUp, label: 'Upload Answers', path: '/upload-answers' },
   { icon: ClipboardCheck, label: 'Grading Review', path: '/grading-review' },
@@ -86,7 +88,7 @@ export function Sidebar() {
       <nav className="flex-1 p-3 space-y-1">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path ||
-            (item.path === '/dashboard' && location.pathname.startsWith('/assignment'));
+            (item.path === '/assignments' && location.pathname.startsWith('/assignment'));
 
           return (
             <button

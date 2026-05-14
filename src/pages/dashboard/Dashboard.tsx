@@ -358,7 +358,7 @@ export default function Dashboard() {
         >
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-foreground">Recent Assignments</h2>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/classes')}>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/assignments')}>
               View all
               <ArrowRight className="h-4 w-4 ml-1" />
             </Button>

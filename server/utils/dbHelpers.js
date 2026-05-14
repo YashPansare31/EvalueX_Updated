@@ -21,7 +21,7 @@ const supabase = require('../services/supabaseClient');
 async function fetchExamQuestions(assignmentId) {
   const { data: questionsRaw, error: qErr } = await supabase
     .from('exam_questions')
-    .select('id, question_text, points, question_order, optional_group')
+    .select('id, question_text, points, question_order, optional_group, question_label')
     .eq('assignment_id', assignmentId)
     .order('question_order', { ascending: true });
 
@@ -30,17 +30,33 @@ async function fetchExamQuestions(assignmentId) {
 }
 
 /**
- * Fetch exam questions and attach sequential Q-labels (Q1, Q2, …).
+ * Fetch exam questions for an assignment, requiring that every row has a question_label.
+ *
+ * question_label is populated by parse-question-paper and stores the exact label printed
+ * on the exam paper (e.g. "Q.1 A", "Q.1 B"). It is used by answer layout detection so
+ * that Gemini sees the same labels students write on their answer sheets.
+ *
+ * Throws if any question is missing a label — this means parse-question-paper has not
+ * been run yet (or the question was added manually without a label). The old fallback
+ * of assigning sequential Q1/Q2/Q3 is intentionally removed: it produced wrong mappings
+ * because Q.1 A became "Q1", Q.1 B became "Q2", Q.2 A became "Q3" etc., which never
+ * matched what students actually wrote.
  *
  * @param {string} assignmentId
- * @returns {Promise<Array>} Questions with an added `question_label` field
+ * @returns {Promise<Array>} Questions — every row guaranteed to have a non-empty question_label
  */
 async function fetchExamQuestionsWithLabels(assignmentId) {
   const questionsRaw = await fetchExamQuestions(assignmentId);
-  return questionsRaw.map((q, idx) => ({
-    ...q,
-    question_label: `Q${idx + 1}`,
-  }));
+
+  const missing = questionsRaw.filter(q => !q.question_label);
+  if (missing.length > 0) {
+    throw new Error(
+      `${missing.length} question(s) for assignment ${assignmentId} have no question_label. ` +
+      `Run /api/parse-question-paper first so labels are stored from the question paper.`
+    );
+  }
+
+  return questionsRaw;
 }
 
 /**

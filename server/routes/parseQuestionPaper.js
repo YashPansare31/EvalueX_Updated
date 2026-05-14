@@ -17,39 +17,33 @@ router.post('/', async (req, res) => {
   try {
     const parsed = await parseQuestionPaperStructure(images, mimeType);
 
-    // Flatten question tree and upsert into exam_questions
+    // Store each question directly — the parser now returns a flat list
+    // (Q1a, Q1b, Q2a, Q2b etc.) with no nested sub_questions
     const { questions, total_marks } = parsed;
+
+    // Delete all existing questions for this assignment before inserting fresh ones.
+    // This prevents duplicate rows when the question paper is re-parsed, which would
+    // corrupt the question list shown to Gemini during answer layout detection.
+    const { error: deleteErr } = await supabase
+      .from('exam_questions')
+      .delete()
+      .eq('assignment_id', assignmentId);
+    if (deleteErr) throw new Error(`Failed to clear old questions: ${deleteErr.message}`);
+
     let questionOrder = 0;
     const insertedQuestions = [];
 
     for (const q of questions) {
-      const hasSubQuestions = q.sub_questions && q.sub_questions.length > 0;
+      const { data, error } = await supabase.from('exam_questions').insert({
+        assignment_id: assignmentId,
+        question_text: q.question_text,
+        points: q.marks ?? q.total_marks ?? 0,
+        question_order: ++questionOrder,
+        optional_group: q.optional_group || null,
+        question_label: q.question_label || null,
+      }).select().single();
 
-      if (!hasSubQuestions) {
-        // Top-level question with no sub-questions
-        const { data, error } = await supabase.from('exam_questions').upsert({
-          assignment_id: assignmentId,
-          question_text: q.question_text,
-          points: q.total_marks,
-          question_order: ++questionOrder,
-          optional_group: q.optional_group || null,
-        }, { onConflict: 'assignment_id,question_order' }).select().single();
-
-        if (!error && data) insertedQuestions.push({ ...data, question_label: q.question_label });
-      } else {
-        // Insert sub-questions
-        for (const sq of q.sub_questions) {
-          const { data, error } = await supabase.from('exam_questions').upsert({
-            assignment_id: assignmentId,
-            question_text: `${q.question_label}: ${sq.question_text}`,
-            points: sq.marks,
-            question_order: ++questionOrder,
-            optional_group: sq.optional_group || q.optional_group || null,
-          }, { onConflict: 'assignment_id,question_order' }).select().single();
-
-          if (!error && data) insertedQuestions.push({ ...data, question_label: sq.question_label });
-        }
-      }
+      if (!error && data) insertedQuestions.push({ ...data, question_label: q.question_label });
     }
 
     // Update assignment max_score if parsed total_marks is available
