@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../services/supabaseClient');
 const { parseModelAnswersStructure } = require('../services/geminiService');
+const { fetchExamQuestionsWithLabels } = require('../utils/dbHelpers');
 
 // POST /api/parse-model-answers
 // Accepts: { assignmentId: string, images: string[] (base64) }
@@ -13,22 +14,12 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    // get questions for mapping
-    const { data: questionsRaw, error: qErr } = await supabase
-      .from('exam_questions')
-      .select('id, question_text, question_order')
-      .eq('assignment_id', assignmentId)
-      .order('question_order', { ascending: true });
+    // Fetch questions with Q-labels for mapping
+    const questionsWithLabels = await fetchExamQuestionsWithLabels(assignmentId);
 
-    if (qErr || !questionsRaw || questionsRaw.length === 0) {
+    if (!questionsWithLabels || questionsWithLabels.length === 0) {
       return res.status(400).json({ error: 'No questions found for this assignment.' });
     }
-
-    // Build question list with labels
-    const questionsWithLabels = questionsRaw.map((q, idx) => ({
-      ...q,
-      question_label: `Q${idx + 1}`,
-    }));
 
     const parsed = await parseModelAnswersStructure(images, questionsWithLabels, mimeType);
 

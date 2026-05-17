@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/layout/Header';
 import { ArrowLeft, Plus, Sparkles, CheckCircle2, Clock, Loader2, User, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { PageLoader } from '@/components/ui/PageLoader';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -83,7 +84,7 @@ export default function AssignmentPage() {
     if (error || !data) {
       toast({
         title: 'Error',
-        description: 'Assignment not found.',
+        description: 'Examination not found.',
         variant: 'destructive',
       });
       navigate('/dashboard');
@@ -209,8 +210,8 @@ export default function AssignmentPage() {
       if (error) throw error;
       
       toast({
-        title: 'Assignment deleted',
-        description: 'The assignment and all related data have been removed.',
+        title: 'Examination deleted',
+        description: 'The examination and all related data have been removed.',
       });
       navigate('/dashboard');
     } catch (error: any) {
@@ -223,13 +224,7 @@ export default function AssignmentPage() {
     setDeletingAssignment(false);
   };
 
-  if (authLoading || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (authLoading || loading) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background">
@@ -247,12 +242,12 @@ export default function AssignmentPage() {
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="text-destructive hover:text-destructive">
                   <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Assignment
+                  Delete Examination
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Assignment?</AlertDialogTitle>
+                  <AlertDialogTitle>Delete Examination?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This will permanently delete "{assignment?.title}" and all its submissions, questions, and rubrics. This action cannot be undone.
                   </AlertDialogDescription>

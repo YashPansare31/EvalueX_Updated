@@ -16,6 +16,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { extractAnswers, gradeSubmission } from '@/integrations/api-client';
+import { formatFileSize } from '@/utils/helpers';
+import { PageLoader } from '@/components/ui/PageLoader';
 import {
   Dialog,
   DialogContent,
@@ -107,11 +109,7 @@ export default function UploadAnswers() {
 
   const handleFiles = (files: File[]) => {
     const validTypes = [
-      'application/pdf', 
-      'image/jpeg', 
-      'image/png', 
-      'image/gif',
-      'image/webp'
+      'application/pdf'
     ];
     
     const newFiles: UploadedFile[] = [];
@@ -189,7 +187,7 @@ export default function UploadAnswers() {
 
   const processFiles = async () => {
     if (!selectedAssignment) {
-      toast.error('Please select an assignment first');
+      toast.error('Please select an examination first');
       return;
     }
 
@@ -304,11 +302,6 @@ export default function UploadAnswers() {
     setIsProcessing(false);
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  };
 
   const getFileIcon = (type: string) => {
     if (type.startsWith('image/')) return ImageIcon;
@@ -346,13 +339,7 @@ export default function UploadAnswers() {
   const completedCount = uploadedFiles.filter(f => f.status === 'complete').length;
   const errorCount = uploadedFiles.filter(f => f.status === 'error').length;
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -379,13 +366,13 @@ export default function UploadAnswers() {
             {/* Assignment Selection */}
             <Card>
               <CardHeader>
-                <CardTitle>Select Assignment</CardTitle>
-                <CardDescription>Choose which assignment these answer sheets belong to</CardDescription>
+                <CardTitle>Select Examination</CardTitle>
+                <CardDescription>Choose which examination these answer sheets belong to</CardDescription>
               </CardHeader>
               <CardContent>
                 <Select value={selectedAssignment} onValueChange={setSelectedAssignment}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select an assignment..." />
+                    <SelectValue placeholder="Select an examination..." />
                   </SelectTrigger>
                   <SelectContent>
                     {assignments.map(assignment => (
@@ -397,7 +384,7 @@ export default function UploadAnswers() {
                 </Select>
                 {assignments.length === 0 && (
                   <p className="text-sm text-muted-foreground mt-2">
-                    No assignments found. <Button variant="link" className="p-0 h-auto" onClick={() => navigate('/upload')}>Create one first</Button>
+                    No examinations found. <Button variant="link" className="p-0 h-auto" onClick={() => navigate('/upload')}>Create one first</Button>
                   </p>
                 )}
               </CardContent>
@@ -410,7 +397,7 @@ export default function UploadAnswers() {
                   <Upload className="h-5 w-5" />
                   Upload Answer Sheets
                 </CardTitle>
-                <CardDescription>Drag and drop or click to upload PDFs and images</CardDescription>
+                <CardDescription>Drag and drop or click to upload PDFs</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div 
@@ -428,7 +415,7 @@ export default function UploadAnswers() {
                     id="answer-file-input"
                     type="file"
                     multiple
-                    accept=".pdf,image/*"
+                    accept=".pdf"
                     className="hidden"
                     onChange={handleFileInput}
                   />
@@ -448,9 +435,6 @@ export default function UploadAnswers() {
                     <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <FileText className="h-4 w-4" /> PDF
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <ImageIcon className="h-4 w-4" /> JPG, PNG, GIF
                       </span>
                       <span>Max 10MB each</span>
                     </div>

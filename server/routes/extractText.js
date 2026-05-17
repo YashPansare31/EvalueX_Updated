@@ -1,13 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { extractTextFromImage } = require('../services/geminiService');
-
-function sanitizeText(text) {
-  if (!text) return text;
-  // Regex to match the college header across line breaks and variations
-  const regex = /AISSMS\s+INSTITUTE\s+OF[\s\S]*?(Approved\s+by\s+AICTE,\s*New\s+Delhi\s+and\s+Recognised\s+by\s+Govt\.\s+of\s+Maharashtra)?[\s\S]*?(Accredited\s+by\s+NAAC\s+with\s+"A\+"\s+Grade\s*\|\s*NBA-S\s+UG\s+Programmes)?[\s\S]*?Pune\s+University\s*\d*/gi;
-  return text.replace(regex, '').trim();
-}
+const { sanitizeExtractedText } = require('../utils/sanitize');
 
 // POST /api/extract-text
 // Accepts: { image: base64string, mimeType?: string }
@@ -22,7 +16,7 @@ router.post('/', async (req, res) => {
     }
 
     let text = await extractTextFromImage(base64Data, mimeType);
-    text = sanitizeText(text);
+    text = sanitizeExtractedText(text);
     return res.json({ text, extractedText: text });
   } catch (err) {
     console.error('[extract-text] Error:', err.message);

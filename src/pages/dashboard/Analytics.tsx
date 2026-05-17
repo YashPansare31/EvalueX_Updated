@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Loader2, TrendingUp, BarChart3, Users, Target } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { PageLoader } from '@/components/ui/PageLoader';
 
 export default function Analytics() {
   const { user, loading } = useAuth();
@@ -85,13 +86,7 @@ export default function Analytics() {
     setLoadingData(false);
   };
 
-  if (loading || loadingData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading || loadingData) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">

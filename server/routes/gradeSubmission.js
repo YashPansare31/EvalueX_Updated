@@ -4,6 +4,7 @@ const supabase = require('../services/supabaseClient');
 const { gradeQuestion } = require('../services/openaiService');
 const { applyOptionalQuestionRules } = require('../utils/optionalQuestionsRules');
 const { aggregateScores } = require('../utils/scoreAggregator');
+const { updateSubmissionStatus } = require('../utils/dbHelpers');
 
 // POST /api/grade-submission
 // Accepts: { submissionId: string, assignmentId: string }
@@ -65,7 +66,7 @@ router.post('/', async (req, res) => {
       // ===== QUESTION-CENTRIC PIPELINE =====
 
       // Update grading_status
-      await supabase.from('submissions').update({ grading_status: 'grading' }).eq('id', submissionId);
+      await updateSubmissionStatus(submissionId, 'grading');
 
       // Grade each question in BATCHES of 3 (prevents OpenAI rate-limit hits)
       const BATCH_SIZE = 3;
@@ -211,7 +212,7 @@ router.post('/', async (req, res) => {
     console.error('[grade-submission] Fatal error:', err.message);
     // Revert grading status on failure
     try {
-      await supabase.from('submissions').update({ grading_status: 'pending' }).eq('id', submissionId);
+      await updateSubmissionStatus(submissionId, 'pending');
     } catch {}
     return res.status(500).json({ error: 'Grading failed', details: err.message });
   }

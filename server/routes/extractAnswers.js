@@ -1,13 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const supabase = require('../services/supabaseClient');
-const { detectAnswerLayout, extractSingleAnswerText, flattenQuestions } = require('../services/geminiService');
+const { detectAnswerLayout, extractSingleAnswerText } = require('../services/geminiService');
+const { sanitizeExtractedText } = require('../utils/sanitize');
+const { fetchExamQuestionsWithLabels, updateSubmissionStatus } = require('../utils/dbHelpers');
 
-function sanitizeExtractedText(text) {
-  if (!text) return text;
-  // Regex to remove the recurring college header with optional trailing numbers (relaxed to account for slight OCR variations)
-  const regex = /AISSMS\s+INSTITUTE\s+OF[\s\S]*?Pune\s+University\s*\d*/gi;
-  return text.replace(regex, '').trim();
+// Normalize a question label for fuzzy matching.
+// "Q.1 A", "Q1 A", "Q1a", "Q1A", "Q1-a", "Q01a" → "q1a"
+function normalizeLabel(label) {
+  return (label || '')
+    .toLowerCase()
+    .replace(/[\s\.\(\)\[\]\-_,;:]/g, '') // remove punctuation and separators
+    .replace(/q0*(\d)/g, 'q$1');           // strip zero-padding: "q01" → "q1"
 }
 
 // POST /api/extract-answers
@@ -25,41 +29,46 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    // Fetch structured questions from DB
-    const { data: questionsRaw, error: qErr } = await supabase
-      .from('exam_questions')
-      .select('id, question_text, points, question_order, optional_group')
-      .eq('assignment_id', assignmentId)
-      .order('question_order', { ascending: true });
+    // Fetch structured questions with labels from DB
+    const questionsWithLabels = await fetchExamQuestionsWithLabels(assignmentId);
 
-    if (qErr || !questionsRaw || questionsRaw.length === 0) {
+    if (!questionsWithLabels || questionsWithLabels.length === 0) {
       return res.status(400).json({
         error: 'No questions found for this assignment. Run /api/parse-question-paper first, or add questions manually.',
       });
     }
 
-    // Build question list with labels for the AI prompt
-    const questionsWithLabels = questionsRaw.map((q, idx) => ({
-      ...q,
-      question_label: `Q${idx + 1}`,
-    }));
-
     // Mark grading status
-    await supabase.from('submissions').update({ grading_status: 'extracting' }).eq('id', submissionId);
+    await updateSubmissionStatus(submissionId, 'extracting');
 
     // ── PASS 2A: Layout Detection ──────────────────────────────────────────
     const layoutResult = await detectAnswerLayout(pages, questionsWithLabels, mimeType);
-    const answerMap = layoutResult.answer_map || [];
+    const rawAnswerMap = layoutResult.answer_map || [];
+
+    // Remap every AI-returned label to the exact DB label using normalized matching.
+    // Gemini may return "Q1 A", "Q.1 A", "Q1A" etc. — we normalize both sides and
+    // replace with the DB's canonical label so all downstream matching is exact.
+    const answerMap = rawAnswerMap.map(entry => {
+      const matched = questionsWithLabels.find(
+        q => normalizeLabel(q.question_label) === normalizeLabel(entry.question_label)
+      );
+      return matched ? { ...entry, question_label: matched.question_label } : entry;
+    });
 
     // Save answer_map to submissions table
     await supabase.from('submissions').update({ answer_map: answerMap }).eq('id', submissionId);
 
-    // ── PASS 2B: Targeted Extraction (run for each question in parallel) ──
-    const extractionPromises = answerMap.map(async (mapEntry) => {
-      if (!mapEntry.attempted) return null;
+    // ── PASS 2B: Targeted Extraction (sequential — one question at a time to avoid rate limits) ──
+    const extractedAnswers = [];
+    for (const mapEntry of answerMap) {
+      if (!mapEntry.attempted) continue;
 
+      // Exact match now guaranteed because we remapped labels above
       const question = questionsWithLabels.find(q => q.question_label === mapEntry.question_label);
-      if (!question) return null;
+      if (!question) {
+        console.warn(`[extract-answers] No DB question found for label "${mapEntry.question_label}" — skipping`);
+        continue;
+      }
 
       // Collect only the relevant pages for this answer
       const relevantPages = (mapEntry.page_refs || [])
@@ -82,7 +91,7 @@ router.post('/', async (req, res) => {
 
         extractedText = sanitizeExtractedText(extractedText);
 
-        return {
+        extractedAnswers.push({
           submission_id: submissionId,
           question_id: question.id,
           question_label: mapEntry.question_label,
@@ -91,34 +100,51 @@ router.post('/', async (req, res) => {
           page_numbers: (mapEntry.page_refs || []).map(ref => ref.page),
           // DB column is confidence (numeric)
           confidence: extractedText.includes('[ILLEGIBLE]') ? 0.6 : 0.9,
-        };
+        });
+
+        // Small delay to prevent overwhelming fetch/rate-limits
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (err) {
         console.error(`[extract-answers] Failed Pass 2B for ${mapEntry.question_label}:`, err.message);
-        return {
+        extractedAnswers.push({
           submission_id: submissionId,
           question_id: question.id,
           question_label: mapEntry.question_label,
           extracted_text: '[EXTRACTION FAILED — MANUAL REVIEW REQUIRED]',
           page_numbers: (mapEntry.page_refs || []).map(ref => ref.page),
           confidence: 0.0,
-        };
+        });
       }
-    });
-
-    const extractedAnswers = (await Promise.all(extractionPromises)).filter(Boolean);
+    }
 
     // ── PASS 2B FALLBACK: catch questions that Pass 2A missed entirely ─────
     // Any question in the DB that has NO entry in answer_map at all (not even attempted:false)
-    // should still get a Pass-2B extraction attempt using all pages.
-    const mappedLabels = new Set(answerMap.map(e => e.question_label));
-    const orphanedQuestions = questionsWithLabels.filter(q => !mappedLabels.has(q.question_label));
+    // should still get a Pass-2B extraction attempt.
+    // Use normalized labels so format differences don't create false "orphans".
+    const mappedNormalized = new Set(answerMap.map(e => normalizeLabel(e.question_label)));
+    const orphanedQuestions = questionsWithLabels.filter(
+      q => !mappedNormalized.has(normalizeLabel(q.question_label))
+    );
 
     if (orphanedQuestions.length > 0) {
-      console.log(`[extract-answers] Pass 2A missed ${orphanedQuestions.length} question(s): ${orphanedQuestions.map(q => q.question_label).join(', ')} — running fallback extraction on all pages`);
-      const fallbackPromises = orphanedQuestions.map(async (question) => {
+      console.warn(
+        `[extract-answers] WARN: Pass 2A missed ${orphanedQuestions.length} question(s): ` +
+        `${orphanedQuestions.map(q => q.question_label).join(', ')}. ` +
+        `This likely means question_label values in the DB don't match what Gemini returned. ` +
+        `Check that parse-question-paper was run and question_labels are stored correctly.`
+      );
+
+      // Limit fallback to at most 4 pages to avoid overwhelming Gemini on long answer sheets.
+      // Sending all 8-10 pages causes it to pick up wrong question sections or return garbage.
+      // Most orphaned questions appear in the first half of the answer sheet.
+      const FALLBACK_PAGE_LIMIT = 4;
+      const fallbackPages = pages.slice(0, FALLBACK_PAGE_LIMIT);
+
+      const fallbackAnswers = [];
+      for (const question of orphanedQuestions) {
         try {
           let extractedText = await extractSingleAnswerText(
-            pages,
+            fallbackPages,
             question.question_text,
             question.question_label,
             mimeType
@@ -126,23 +152,27 @@ router.post('/', async (req, res) => {
           extractedText = sanitizeExtractedText(extractedText);
 
           // Only store if we actually found something (not [NO ANSWER FOUND])
-          if (!extractedText || extractedText.trim() === '[NO ANSWER FOUND]') return null;
+          if (!extractedText || extractedText.trim() === '[NO ANSWER FOUND]') {
+            console.log(`[extract-answers] Fallback: no answer found for ${question.question_label} in first ${FALLBACK_PAGE_LIMIT} pages`);
+            continue;
+          }
 
-          return {
+          fallbackAnswers.push({
             submission_id: submissionId,
             question_id: question.id,
             question_label: question.question_label,
             extracted_text: extractedText,
-            page_numbers: pages.map((_, i) => i + 1), // all pages
-            confidence: extractedText.includes('[ILLEGIBLE]') ? 0.6 : 0.85,
-          };
+            page_numbers: fallbackPages.map((_, i) => i + 1),
+            // Lower confidence than Pass 2B proper (0.85 → 0.7) because page selection is a guess
+            confidence: extractedText.includes('[ILLEGIBLE]') ? 0.5 : 0.7,
+          });
+
+          await new Promise(resolve => setTimeout(resolve, 500));
         } catch (err) {
           console.error(`[extract-answers] Fallback extraction failed for ${question.question_label}:`, err.message);
-          return null;
         }
-      });
+      }
 
-      const fallbackAnswers = (await Promise.all(fallbackPromises)).filter(Boolean);
       extractedAnswers.push(...fallbackAnswers);
 
       if (fallbackAnswers.length > 0) {
@@ -150,19 +180,32 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Upsert all extracted answers into submission_answers
+    // Delete ALL old submission_answers for this submission before writing fresh ones.
+    // If the question paper was re-parsed (new question UUIDs), old rows would have stale
+    // question_id foreign keys that grading can never resolve — silently skipping answers.
+    const { error: deleteAnswersErr } = await supabase
+      .from('submission_answers')
+      .delete()
+      .eq('submission_id', submissionId);
+    if (deleteAnswersErr) {
+      console.error('[extract-answers] Failed to delete stale submission_answers:', deleteAnswersErr.message);
+      throw new Error(`Failed to clear stale answers: ${deleteAnswersErr.message}`);
+    }
+
+    // Also clear any stale question_grades so grading starts fresh
+    await supabase.from('question_grades').delete().eq('submission_id', submissionId);
+
+    // Insert all extracted answers into submission_answers
     for (const answer of extractedAnswers) {
-      const { error: upsertErr } = await supabase.from('submission_answers').upsert(answer, {
-        onConflict: 'submission_id,question_id',
-      });
-      if (upsertErr) {
-        console.error(`[extract-answers] Upsert failed for ${answer.question_label}:`, upsertErr.message);
-        throw new Error(`Failed to save extracted answer for ${answer.question_label}: ${upsertErr.message}`);
+      const { error: insertErr } = await supabase.from('submission_answers').insert(answer);
+      if (insertErr) {
+        console.error(`[extract-answers] Insert failed for ${answer.question_label}:`, insertErr.message);
+        throw new Error(`Failed to save extracted answer for ${answer.question_label}: ${insertErr.message}`);
       }
     }
 
     // Reset status to pending (ready for grading)
-    await supabase.from('submissions').update({ grading_status: 'pending' }).eq('id', submissionId);
+    await updateSubmissionStatus(submissionId, 'pending');
 
     return res.json({
       answer_map: answerMap,
@@ -177,7 +220,7 @@ router.post('/', async (req, res) => {
 
   } catch (err) {
     console.error('[extract-answers] Fatal error:', err.message);
-    await supabase.from('submissions').update({ grading_status: 'pending' }).eq('id', submissionId).catch(() => { });
+    await updateSubmissionStatus(submissionId, 'pending').catch(() => { });
     return res.status(500).json({ error: 'Answer extraction failed', details: err.message });
   }
 });

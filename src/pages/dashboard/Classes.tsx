@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Loader2, Users, BookOpen, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import { PageLoader } from '@/components/ui/PageLoader';
 
 interface ClassData {
   id: string;
@@ -126,13 +127,7 @@ export default function Classes() {
     }
   };
 
-  if (loading || loadingData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading || loadingData) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">

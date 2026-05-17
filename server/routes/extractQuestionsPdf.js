@@ -1,65 +1,66 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const { extractQuestionsFromPdfText } = require('../services/geminiService');
-
-const upload = multer({ storage: multer.memoryStorage() });
-
-const pdf = require('pdf-parse');
+const { extractQuestionsFromPdfText, parseQuestionPaperStructure } = require('../services/geminiService');
+const { upload } = require('../utils/multerUpload');
+const { parsePdfBuffer } = require('../utils/pdfParser');
+const { handleGeminiError, requireGeminiKey } = require('../utils/geminiErrors');
 
 // POST /api/extract-questions-pdf
 // BACKWARD COMPATIBLE — preserves existing frontend contract in UploadExam.tsx
 // Accepts: multipart/form-data with 'file' field (PDF)
 // Returns: { success: true, questions: [...] }
+//
+// Two-path extraction:
+//   Path A — Text-based PDF: pdf-parse extracts text → Gemini reads text
+//   Path B — Scanned/image-based PDF: text extraction returns empty →
+//             send raw PDF bytes to Gemini Vision (application/pdf inline data)
 router.post('/', upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No PDF file uploaded' });
         }
 
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
-        }
+        if (requireGeminiKey(res)) return;
 
-        // Parse the PDF using standard pdf-parse
-        let pdfText = '';
+        let questionsArray = [];
+
+        // ── Path A: try text extraction first ──────────────────────────────
+        let pdfText = null;
         try {
-            const pdfData = await pdf(req.file.buffer);
-            pdfText = pdfData.text;
-        } catch (pdfErr) {
-            console.error('PDF parsing error:', pdfErr);
-            return res.status(400).json({ error: 'Failed to parse PDF content. Ensure it is a valid PDF.' });
+            pdfText = await parsePdfBuffer(req.file.buffer);
+        } catch (textErr) {
+            // Only swallow the "empty/unreadable" error — rethrow anything else
+            if (!textErr.message?.includes('empty or unreadable')) throw textErr;
+            console.log('[extract-questions-pdf] Text extraction returned empty — falling back to Gemini Vision (scanned PDF)');
         }
 
-        if (!pdfText.trim()) {
-            return res.status(400).json({ error: 'Appears to be an empty or unreadable PDF' });
+        if (pdfText) {
+            // Text-based PDF: ask Gemini to parse the extracted text
+            questionsArray = await extractQuestionsFromPdfText(pdfText);
+        } else {
+            // ── Path B: scanned/image-based PDF — send raw bytes to Gemini Vision ──
+            // Gemini 2.5-flash accepts application/pdf as inline data and can OCR
+            // scanned pages, making pdf-parse irrelevant for image-only PDFs.
+            const base64Pdf = req.file.buffer.toString('base64');
+            const parsed = await parseQuestionPaperStructure([base64Pdf], 'application/pdf');
+
+            // Map parseQuestionPaperStructure's shape → extractQuestionsPdf shape
+            questionsArray = (parsed.questions || []).map(q => ({
+                question_label: q.question_label || null,
+                text: q.question_text || '',
+                points: q.marks ?? q.total_marks ?? 10,
+            }));
         }
 
-        let questionsArray = await extractQuestionsFromPdfText(pdfText);
-
-        // Remove modelAnswer from the extracted questions as per user request
-        questionsArray = questionsArray.map(q => {
-            const { modelAnswer, ...rest } = q;
-            return rest;
-        });
+        // Strip any stray modelAnswer field that may come through
+        questionsArray = questionsArray.map(({ modelAnswer, ...rest }) => rest);
 
         return res.json({
             success: true,
             questions: questionsArray,
         });
     } catch (error) {
-        console.error('[extract-questions-pdf] Error:', error.message);
-
-        if (error.message?.includes('API key')) {
-            return res.status(500).json({ error: 'Invalid Gemini API key' });
-        }
-        if (error.message?.includes('rate')) {
-            return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
-        }
-
-        return res.status(500).json({
-            error: error.message || 'Unknown PDF extraction error',
-        });
+        return handleGeminiError(error, res, '[extract-questions-pdf]');
     }
 });
 

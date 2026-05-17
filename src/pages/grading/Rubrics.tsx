@@ -22,6 +22,7 @@ import { Loader2, BookOpen, Plus, FileText, Upload, Trash2 } from 'lucide-react'
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { PageLoader } from '@/components/ui/PageLoader';
 
 export default function Rubrics() {
   const { user, loading } = useAuth();
@@ -153,7 +154,7 @@ export default function Rubrics() {
       
       let parsedText = '';
       try {
-        const response = await fetch('http://localhost:3001/api/parse-rubric-pdf', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/parse-rubric-pdf`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}` // if backend requires it in the future
@@ -204,13 +205,7 @@ export default function Rubrics() {
     }
   };
 
-  if (loading || fetching) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading || fetching) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">

@@ -13,6 +13,8 @@ import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import { generateFeedbackPdfBlob } from '@/utils/feedbackPdf';
 import { uploadAndStoreFeedbackPdf } from '@/integrations/api-client';
+import { gradeLabel } from '@/utils/helpers';
+import { PageLoader } from '@/components/ui/PageLoader';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,15 +41,6 @@ interface Submission {
   };
 }
 
-function gradeLabel(pct: number) {
-  if (pct >= 90) return 'A+';
-  if (pct >= 80) return 'A';
-  if (pct >= 70) return 'B';
-  if (pct >= 60) return 'C';
-  if (pct >= 50) return 'D';
-  if (pct >= 35) return 'E';
-  return 'F';
-}
 
 export default function Results() {
   const { user, loading } = useAuth();
@@ -176,7 +169,7 @@ export default function Results() {
   const exportToCSV = () => {
     const headers = [
       'Student Name',
-      'Assignment',
+      'Examination',
       'Score',
       'Max Score',
       'Percentage',
@@ -253,7 +246,7 @@ export default function Results() {
     doc.setTextColor(255, 255, 255);
     doc.rect(margin - 2, yPos - 5, pageW - margin * 2 + 4, 8, 'F');
     doc.text('Student', cols.student, yPos);
-    doc.text('Assignment', cols.assignment, yPos);
+    doc.text('Examination', cols.assignment, yPos);
     doc.text('Score', cols.score, yPos);
     doc.text('Grade', cols.grade, yPos);
     doc.text('Date', cols.date, yPos);
@@ -320,13 +313,7 @@ export default function Results() {
     toast.success('PDF exported successfully');
   };
 
-  if (loading || loadingData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading || loadingData) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -379,7 +366,7 @@ export default function Results() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Student</TableHead>
-                      <TableHead>Assignment</TableHead>
+                      <TableHead>Examination</TableHead>
                       <TableHead>Score</TableHead>
                       <TableHead>Grade</TableHead>
                       <TableHead>Graded</TableHead>

@@ -12,9 +12,16 @@ async function callGeminiWithRetry(fn, maxRetries = 3) {
     try {
       return await fn();
     } catch (err) {
-      if (err.message.includes('429') && attempt < maxRetries) {
-        const waitTime = attempt * 12000; // 12s, 24s, 36s
-        console.log(`Rate limited, waiting ${waitTime / 1000}s before retry ${attempt}/${maxRetries}`);
+      const isRetryable = err.message.includes('429') || 
+                          err.message.includes('fetch failed') || 
+                          err.message.includes('503') || 
+                          err.message.includes('500') ||
+                          err.message.includes('502') ||
+                          err.message.includes('ECONNRESET');
+
+      if (isRetryable && attempt < maxRetries) {
+        const waitTime = attempt * 8000; // 8s, 16s...
+        console.log(`[Gemini API] Transient error (${err.message}). Waiting ${waitTime / 1000}s before retry ${attempt}/${maxRetries}`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       } else {
         throw err;
@@ -42,14 +49,19 @@ async function parseQuestionPaperStructure(base64Images, mimeType = 'image/jpeg'
     inlineData: { data: stripBase64Prefix(b64), mimeType },
   }));
 
-  const prompt = `You are an academic document parser. Analyze this exam question paper and extract its COMPLETE structure as JSON.
+  const prompt = `You are an academic document parser. Analyze this exam question paper and extract a FLAT list of every gradeable question/sub-question as JSON.
 
 RULES:
-- Extract every question, sub-question, and their exact marks allocation
-- Identify optional question groups (e.g. "Answer Q1 OR Q2" means optional_group = "OPT_A")
+- Return each gradeable item (sub-question or standalone question) as a separate entry in the flat "questions" array
+- Copy the question_label EXACTLY as printed on the paper — preserve dots, spaces, and capitalisation
+  Examples: if the paper says "Q.1 A" use "Q.1 A", if it says "Q1(a)" use "Q1(a)", if it says "1a" use "1a"
+  DO NOT normalise or reformat: never convert "Q.1 A" to "Q1a" or vice versa
+- If Q.1 has parts A and B, return TWO separate entries: one with label "Q.1 A" and one with "Q.1 B"
+  (NOT a parent Q.1 entry with nested sub_questions)
+- Identify optional question groups (e.g. "Answer Q.7 OR Q.8" → optional_group = "OPT_G")
 - Assign the SAME optional_group string to both questions in an optional pair
 - Preserve the exact question text including any formulas or special notation
-- question_label must be human-readable: "Q1", "Q1a", "Q1b", "Q2", "Q2a", etc.
+- Each entry has its own marks value (the marks for that specific part)
 
 Return ONLY this JSON structure, no explanation:
 {
@@ -57,23 +69,15 @@ Return ONLY this JSON structure, no explanation:
   "instructions": "<any general exam instructions>",
   "questions": [
     {
-      "question_label": "Q1",
-      "question_text": "<full text of the question>",
-      "total_marks": <number>,
-      "optional_group": null,
-      "sub_questions": [
-        {
-          "question_label": "Q1a",
-          "question_text": "<sub-question text>",
-          "marks": <number>,
-          "optional_group": null
-        }
-      ]
+      "question_label": "Q.1 A",
+      "question_text": "<full text of this sub-question or question>",
+      "marks": <number>,
+      "optional_group": null
     }
   ]
 }`;
 
-  const result = await model.generateContent([prompt, ...imageParts]);
+  const result = await callGeminiWithRetry(() => model.generateContent([prompt, ...imageParts]));
   const text = result.response.text();
 
   try {
@@ -105,35 +109,45 @@ async function detectAnswerLayout(base64Pages, questions, mimeType = 'image/jpeg
     { inlineData: { data: stripBase64Prefix(b64), mimeType } }
   ]);
 
-  const flatQuestions = flattenQuestions(questions);
-  const questionList = flatQuestions
+  const questionList = questions
     .map(q => `- ${q.question_label}: "${q.question_text.substring(0, 250)}"`)
     .join('\n');
 
   const prompt = `You are analyzing a university student's handwritten exam answer sheet.
 
-The exam has these questions:
+The exam has these questions (these are the CANONICAL labels — use them EXACTLY in your output):
 ${questionList}
 
 Examine ALL pages carefully. For EACH question listed above, identify:
 1. Which page numbers contain the student's answer (an answer may span multiple pages)
 2. The approximate region on each page (top_third / middle_third / bottom_third / full_page / top_half / bottom_half)
 3. Whether the student attempted this question
-4. IMPORTANT: If the student wrote answers for BOTH questions in an optional pair (e.g., both Q1 and Q2 when only one is required), set optional_also_attempted = true for BOTH
+4. IMPORTANT: If the student wrote answers for BOTH questions in an optional pair, set optional_also_attempted = true for BOTH
 
 CRITICAL — DEFAULT TO ATTEMPTED:
 If there is ANY written content on the pages that could plausibly be for a question, mark attempted = true.
-Only mark attempted = false if the pages are completely blank for that question or if the student explicitly wrote "Not attempted" or left a clearly empty section.
-When in doubt, mark attempted = true — it is better to extract an empty answer than to miss a real one.
+Only mark attempted = false if the section is completely blank or the student explicitly wrote "Not attempted".
+When in doubt, mark attempted = true.
 
-CRITICAL — PARTIAL LABEL HANDLING:
-Students often use shorthand when writing multi-part answers. For example, for Q1 which has parts A and B:
-- They may write "Q.1 A" or "Q1 a)" for the first part
-- Then ONLY write "B" or "b)" (WITHOUT repeating "Q.1") immediately after for the second part
-- A standalone letter label like "B", "b)", "b." following a Q1 answer block almost certainly means "Q1 B" (the next sub-part of the same question)
-- Similarly, roman numerals (i, ii, iii) appearing after a sub-question heading belong to that sub-question
-- A student writing "Q1" may be answering what the exam calls Q1a and Q1b — assign those pages to BOTH sub-parts
-Always try to match orphan letter/numeral labels to the most recently headed parent question.
+CRITICAL — LABEL MATCHING AND CONTINUATION:
+Students write labels in many ways. Your job is to match what the student wrote to the canonical label from the list above.
+
+Step 1 — Direct match (ignore dots, spaces, capitalisation, brackets):
+  Student writes    →  Canonical label (from the list)
+  "Q.1 A"           →  whatever the list has for Q1 part A  (e.g. "Q.1 A")
+  "Q1 A", "Q1a"     →  same
+  "Q.2 B"           →  whatever the list has for Q2 part B  (e.g. "Q.2 B")
+
+Step 2 — Bare-letter continuation (VERY COMMON):
+  A student often writes the full label for the FIRST part and then writes ONLY the letter for subsequent parts on the same or next page.
+  Example: student writes "Q.1 A" then later writes just "B" or "(b)" or "Ans B" — this means Q.1 B.
+  Rule: if you see a lone letter (A, B, C, ...) with no question number, inherit the last seen question number to form the full label, then match that to the canonical list.
+
+Step 3 — Output rule:
+  ALWAYS use the EXACT canonical label from the question list in your JSON output.
+  NEVER output the student's written version. If the list has "Q.1 B" and the student wrote "B", output "Q.1 B".
+
+Roman numerals (i, ii, iii) within an answer block are part of that answer, not separate questions.
 
 IMPORTANT: Your answer_map MUST contain an entry for EVERY question in the list above, even if attempted = false.
 
@@ -142,7 +156,7 @@ Return ONLY this JSON structure:
   "total_pages_analyzed": <number>,
   "answer_map": [
     {
-      "question_label": "Q1a",
+      "question_label": "Q.1 A",
       "attempted": true,
       "optional_also_attempted": false,
       "page_refs": [
@@ -153,7 +167,7 @@ Return ONLY this JSON structure:
   ]
 }`;
 
-  const result = await model.generateContent([prompt, ...imageParts]);
+  const result = await callGeminiWithRetry(() => model.generateContent([prompt, ...imageParts]));
   const text = result.response.text();
 
   try {
@@ -184,7 +198,7 @@ async function extractSingleAnswerText(relevantPageImages, questionText, questio
 
   const prompt = `You are extracting a student's handwritten exam answer from scanned images.
 
-THE QUESTION BEING ANSWERED (${questionLabel}):
+THE QUESTION BEING ANSWERED: ${questionLabel}
 "${questionText}"
 
 INSTRUCTIONS:
@@ -196,14 +210,16 @@ INSTRUCTIONS:
 - Do NOT include text that belongs to other questions
 - Do NOT include the question text itself, only the student's answer
 
-CRITICAL — PARTIAL / SHORTHAND LABEL HANDLING:
-Students frequently use shorthand when writing multi-part answers. Examples:
-  • For Q1 with parts A and B: they write "Q.1 A" (or "Q1 a)") for part A, then ONLY "B" or "b)" for part B without re-writing "Q.1"
-  • A bare letter label (A, B, C or a, b, c) or roman numeral (i, ii, iii) that appears right after the previous sub-part is a continuation — treat it as the next sub-part of the same parent question
-  • If ${questionLabel} ends with a letter (e.g. Q1b), also look for content introduced by just "b", "b)", "b." or "B" after the "Q1 a" section on the same page(s)
-Do not skip answer content simply because the student omitted the full question number prefix.
+HOW TO FIND THIS ANSWER ON THE PAGE:
+The question label is "${questionLabel}". Look for these written by the student:
+  • The full label exactly: "${questionLabel}"
+  • Variants ignoring dots/spaces: e.g. if label is "Q.1 A" also look for "Q1 A", "Q1a", "Q.1A"
+  • BARE LETTER CONTINUATION: if label ends in a letter like "A" or "B", the student may have
+    written the parent number earlier on the page and then written ONLY the letter ("B", "b)", "Ans B")
+    to start this answer. Treat any such bare letter that follows a previous sub-question as this answer.
+  • The answer content begins immediately after the student writes the label (or bare letter)
 
-Return the extracted answer text directly, no JSON wrapper, no explanation.`;
+Return the extracted answer text directly — no JSON, no explanation, just the answer text.`;
 
   const result = await callGeminiWithRetry(() => model.generateContent([prompt, ...imageParts]));
   return result.response.text().trim();
@@ -222,32 +238,14 @@ async function extractTextFromImage(base64Image, mimeType = 'image/jpeg') {
 
   const prompt = `Extract ALL text from this image exactly as written. Preserve paragraph breaks and line structure. Transcribe handwritten text accurately. Return only the extracted text, no commentary.`;
 
-  const result = await model.generateContent([
+  const result = await callGeminiWithRetry(() => model.generateContent([
     prompt,
     { inlineData: { data: stripBase64Prefix(base64Image), mimeType } },
-  ]);
+  ]));
 
   return result.response.text();
 }
 
-// Helper: flatten nested question tree into a flat array.
-// Includes BOTH parent questions AND their sub-questions so that
-// a student writing "Q1" (without A/B suffix) is still matched.
-function flattenQuestions(questions) {
-  const flat = [];
-  for (const q of questions) {
-    if (!q.sub_questions || q.sub_questions.length === 0) {
-      flat.push(q);
-    } else {
-      // Include the parent question itself so layout AI can match it
-      flat.push(q);
-      for (const sq of q.sub_questions) {
-        flat.push(sq);
-      }
-    }
-  }
-  return flat;
-}
 
 async function extractQuestionsFromPdfText(pdfText) {
   const model = genAI.getGenerativeModel({
@@ -261,10 +259,13 @@ async function extractQuestionsFromPdfText(pdfText) {
   const prompt = `You are an academic document parser. Extract all questions from the following exam paper text.
 
 RULES:
-- Extract every question along with its points/marks.
+- Extract every gradeable question/sub-question as a separate entry
+- Copy question_label EXACTLY as printed (e.g. "Q.1 A", "Q.1 B", "Q.2", "1a") — do NOT reformat or normalise
+- If a question has no explicit label, infer one from its position (e.g. "Q.1", "Q.2")
 - Return ONLY JSON matching this exact structure:
 [
   {
+    "question_label": "<exact label as on paper, e.g. Q.1 A>",
     "text": "<full text of the question>",
     "points": <number>
   }
@@ -273,7 +274,7 @@ RULES:
 EXAM TEXT:
 ${pdfText}`;
 
-  const result = await model.generateContent(prompt);
+  const result = await callGeminiWithRetry(() => model.generateContent(prompt));
   const text = result.response.text();
 
   try {
@@ -315,7 +316,7 @@ RULES:
 MODEL ANSWER SHEET TEXT:
 ${pdfText}`;
 
-  const result = await model.generateContent(prompt);
+  const result = await callGeminiWithRetry(() => model.generateContent(prompt));
   const text = result.response.text();
 
   try {
@@ -332,7 +333,6 @@ module.exports = {
   detectAnswerLayout,
   extractSingleAnswerText,
   extractTextFromImage,
-  flattenQuestions,
   extractQuestionsFromPdfText,
   extractModelAnswersFromPdfText,
 };

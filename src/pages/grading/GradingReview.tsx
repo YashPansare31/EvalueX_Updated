@@ -14,6 +14,8 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { gradeSubmission, aggregateScores, regradeSingleQuestion, uploadAndStoreFeedbackPdf } from '@/integrations/api-client';
 import { generateFeedbackPdfBlob } from '@/utils/feedbackPdf';
+import { formatFeedback, formatStudentText } from '@/utils/helpers';
+import { PageLoader } from '@/components/ui/PageLoader';
 import jsPDF from 'jspdf';
 import {
   AlertDialog,
@@ -27,24 +29,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-// Helper to format unstructured student answers into readable layouts
-function formatStudentText(text: string | null | undefined): string {
-  if (!text) return '';
-
-  // 1. Remove unwanted college boilerplate
-  let formatted = text.replace(/AISSMS\s+INSTITUTE\s+OF[\s\S]*?Pune\s+University\s*\d*/gi, '');
-
-  // 2. Erase single newlines from OCR bounding boxes, but preserve double-newline paragraphs
-  formatted = formatted.replace(/([^\n])\n(?!\n)/g, '$1 ');
-
-  // 3. Force distinct paragraphs for new 'Question N' markers
-  formatted = formatted.replace(/(Q\.\s*\d+(?:\s*[A-Z])?|Question\s*\d+|Q\s*\d+)/gi, '\n\n$1');
-
-  // 4. Create bullet indents for roman numerals and standard lists/letters
-  formatted = formatted.replace(/(\s+)([ivx]{1,4}[.)]|[a-z]\)|\d+[.)])/gi, '\n  $2');
-
-  return formatted.trim();
-}
 
 interface QuestionGrade {
   id: string;
@@ -444,18 +428,7 @@ export default function GradingReview() {
     return { label: 'Pending Review', variant: 'outline' as const };
   };
 
-  const formatFeedback = (text: string | null): string => {
-    if (!text) return 'No feedback available';
-    return text.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/#{1,6}\s*/g, '').replace(/`([^`]+)`/g, '$1').replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, '')).replace(/^\s*[-*+]\s+/gm, '- ').replace(/^\s*\d+\.\s+/gm, (match) => match).trim();
-  };
-
-  if (loading || loadingData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-accent" />
-      </div>
-    );
-  }
+  if (loading || loadingData) return <PageLoader />;
 
   const pendingCount = submissions.filter(s => !s.graded_at).length;
   const reviewedCount = submissions.filter(s => s.graded_at).length;

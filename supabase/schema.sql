@@ -241,6 +241,8 @@ CREATE TABLE IF NOT EXISTS public.exam_questions (
   points INTEGER NOT NULL DEFAULT 10,
   model_answer TEXT,
   question_order INTEGER NOT NULL DEFAULT 0,
+  optional_group TEXT,
+  question_label TEXT,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
@@ -415,8 +417,11 @@ ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS answer_map JSONB;
 -- Add feedback_pdf_url to submissions (stores Supabase Storage public URL)
 ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS feedback_pdf_url TEXT;
 
--- Add optional_group to exam_questions
+-- optional_group and question_label are now in the CREATE TABLE above.
+-- These ALTER TABLEs are kept as no-ops (IF NOT EXISTS) for existing deployments
+-- that were created before these columns were added to CREATE TABLE.
 ALTER TABLE public.exam_questions ADD COLUMN IF NOT EXISTS optional_group TEXT;
+ALTER TABLE public.exam_questions ADD COLUMN IF NOT EXISTS question_label TEXT;
 
 -- ============================================================
 -- 6c. STORAGE BUCKET — feedback-reports
@@ -572,6 +577,12 @@ CREATE INDEX IF NOT EXISTS idx_submissions_graded_at ON public.submissions(grade
 CREATE INDEX IF NOT EXISTS idx_submissions_grading_status ON public.submissions(grading_status);
 CREATE INDEX IF NOT EXISTS idx_exam_questions_assignment_id ON public.exam_questions(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_exam_questions_order ON public.exam_questions(assignment_id, question_order);
+
+-- Unique constraint so upsert onConflict:'assignment_id,question_order' works correctly
+-- Without this, every re-parse creates duplicate rows instead of updating existing ones
+ALTER TABLE public.exam_questions
+  ADD CONSTRAINT IF NOT EXISTS exam_questions_assignment_order_unique
+  UNIQUE (assignment_id, question_order);
 CREATE INDEX IF NOT EXISTS idx_exam_rubrics_assignment_id ON public.exam_rubrics(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_submission_answers_submission_id ON public.submission_answers(submission_id);
 CREATE INDEX IF NOT EXISTS idx_submission_answers_question_id ON public.submission_answers(question_id);

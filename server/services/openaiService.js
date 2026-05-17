@@ -105,7 +105,7 @@ MAXIMUM SCORE: ${maxScore}`;
   if (questions.length > 0) {
     context += `\n\nEXAM QUESTIONS:\n`;
     questions.forEach((q, i) => {
-      context += `Q${i + 1} [${q.points} marks]: ${q.question_text}\n`;
+      context += `${q.question_label || `Q${i + 1}`} [${q.points} marks]: ${q.question_text}\n`;
     });
   }
 
