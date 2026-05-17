@@ -187,7 +187,7 @@ export default function UploadAnswers() {
 
   const processFiles = async () => {
     if (!selectedAssignment) {
-      toast.error('Please select an assignment first');
+      toast.error('Please select an examination first');
       return;
     }
 
@@ -366,13 +366,13 @@ export default function UploadAnswers() {
             {/* Assignment Selection */}
             <Card>
               <CardHeader>
-                <CardTitle>Select Assignment</CardTitle>
-                <CardDescription>Choose which assignment these answer sheets belong to</CardDescription>
+                <CardTitle>Select Examination</CardTitle>
+                <CardDescription>Choose which examination these answer sheets belong to</CardDescription>
               </CardHeader>
               <CardContent>
                 <Select value={selectedAssignment} onValueChange={setSelectedAssignment}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select an assignment..." />
+                    <SelectValue placeholder="Select an examination..." />
                   </SelectTrigger>
                   <SelectContent>
                     {assignments.map(assignment => (
@@ -384,7 +384,7 @@ export default function UploadAnswers() {
                 </Select>
                 {assignments.length === 0 && (
                   <p className="text-sm text-muted-foreground mt-2">
-                    No assignments found. <Button variant="link" className="p-0 h-auto" onClick={() => navigate('/upload')}>Create one first</Button>
+                    No examinations found. <Button variant="link" className="p-0 h-auto" onClick={() => navigate('/upload')}>Create one first</Button>
                   </p>
                 )}
               </CardContent>

@@ -112,7 +112,7 @@ export default function ClassDetail() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-1">{className || 'Class Details'}</h1>
-            <p className="text-muted-foreground">Assignments and results for this class</p>
+            <p className="text-muted-foreground">Examinations and results for this class</p>
           </div>
         </motion.div>
 
@@ -124,7 +124,7 @@ export default function ClassDetail() {
                   <FileText className="h-5 w-5 text-accent" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Assignments</p>
+                  <p className="text-sm text-muted-foreground">Examinations</p>
                   <p className="text-2xl font-bold">{assignments.length}</p>
                 </div>
               </div>
@@ -166,12 +166,12 @@ export default function ClassDetail() {
           </Card>
         </div>
 
-        <h2 className="text-xl font-semibold mb-4">Assignments</h2>
+        <h2 className="text-xl font-semibold mb-4">Examinations</h2>
         {assignments.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-12">
               <FileText className="h-10 w-10 text-muted-foreground/30 mb-4" />
-              <p className="text-muted-foreground">No assignments attached to this class yet</p>
+              <p className="text-muted-foreground">No examinations attached to this class yet</p>
               <Button 
                 variant="outline" 
                 className="mt-4"

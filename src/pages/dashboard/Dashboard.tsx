@@ -144,13 +144,13 @@ export default function Dashboard() {
       if (error) throw error;
       
       toast({
-        title: 'Assignment deleted',
-        description: 'The assignment and all related data have been removed.',
+        title: 'Examination deleted',
+        description: 'The examination and all related data have been removed.',
       });
       fetchAssignments();
     } catch (error: any) {
       toast({
-        title: 'Error deleting assignment',
+        title: 'Error deleting examination',
         description: error.message,
         variant: 'destructive',
       });
@@ -357,7 +357,7 @@ export default function Dashboard() {
           transition={{ duration: 0.4, delay: 0.35 }}
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Recent Assignments</h2>
+            <h2 className="text-lg font-semibold text-foreground">Recent Examinations</h2>
             <Button variant="ghost" size="sm" onClick={() => navigate('/assignments')}>
               View all
               <ArrowRight className="h-4 w-4 ml-1" />
@@ -368,13 +368,13 @@ export default function Dashboard() {
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                <h3 className="text-lg font-medium text-foreground mb-2">No assignments yet</h3>
+                <h3 className="text-lg font-medium text-foreground mb-2">No examinations yet</h3>
                 <p className="text-sm text-muted-foreground mb-4 text-center">
-                  Create your first assignment to start grading with AI.
+                  Create your first examination to start grading with AI.
                 </p>
                 <Button variant="hero" onClick={() => navigate('/upload')}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Create Assignment
+                  Create Examination
                 </Button>
               </CardContent>
             </Card>
@@ -434,7 +434,7 @@ export default function Dashboard() {
                             </AlertDialogTrigger>
                             <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Assignment?</AlertDialogTitle>
+                                <AlertDialogTitle>Delete Examination?</AlertDialogTitle>
                                 <AlertDialogDescription>
                                   This will permanently delete "{assignment.title}" and all its submissions, questions, and rubrics. This action cannot be undone.
                                 </AlertDialogDescription>

@@ -84,7 +84,7 @@ export default function AssignmentPage() {
     if (error || !data) {
       toast({
         title: 'Error',
-        description: 'Assignment not found.',
+        description: 'Examination not found.',
         variant: 'destructive',
       });
       navigate('/dashboard');
@@ -210,8 +210,8 @@ export default function AssignmentPage() {
       if (error) throw error;
       
       toast({
-        title: 'Assignment deleted',
-        description: 'The assignment and all related data have been removed.',
+        title: 'Examination deleted',
+        description: 'The examination and all related data have been removed.',
       });
       navigate('/dashboard');
     } catch (error: any) {
@@ -242,12 +242,12 @@ export default function AssignmentPage() {
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="text-destructive hover:text-destructive">
                   <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Assignment
+                  Delete Examination
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Assignment?</AlertDialogTitle>
+                  <AlertDialogTitle>Delete Examination?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This will permanently delete "{assignment?.title}" and all its submissions, questions, and rubrics. This action cannot be undone.
                   </AlertDialogDescription>

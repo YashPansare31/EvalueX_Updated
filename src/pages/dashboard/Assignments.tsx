@@ -73,7 +73,7 @@ export default function Assignments() {
       .order('created_at', { ascending: false });
 
     if (error) {
-      toast.error('Failed to load assignments');
+      toast.error('Failed to load examinations');
       setLoading(false);
       return;
     }
@@ -120,10 +120,10 @@ export default function Assignments() {
       await supabase.from('exam_rubrics').delete().eq('assignment_id', assignmentId);
       const { error } = await supabase.from('assignments').delete().eq('id', assignmentId);
       if (error) throw error;
-      toast.success('Assignment deleted successfully');
+      toast.success('Examination deleted successfully');
       fetchAssignments();
     } catch (err: any) {
-      toast.error(err.message || 'Failed to delete assignment');
+      toast.error(err.message || 'Failed to delete examination');
     }
     setDeletingId(null);
   };
@@ -142,14 +142,14 @@ export default function Assignments() {
           className="flex items-center justify-between mb-8"
         >
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-1">Assignments</h1>
+            <h1 className="text-3xl font-bold text-foreground mb-1">Examinations</h1>
             <p className="text-muted-foreground">
-              {assignments.length} assignment{assignments.length !== 1 ? 's' : ''} total
+              {assignments.length} examination{assignments.length !== 1 ? 's' : ''} total
             </p>
           </div>
           <Button variant="hero" onClick={() => navigate('/upload')}>
             <Plus className="h-4 w-4 mr-2" />
-            New Assignment
+            New Examination
           </Button>
         </motion.div>
 
@@ -163,7 +163,7 @@ export default function Assignments() {
           >
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search assignments..."
+              placeholder="Search examinations..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-9"
@@ -176,19 +176,19 @@ export default function Assignments() {
           <Card className="border-dashed">
             <div className="flex flex-col items-center justify-center py-16">
               <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">No assignments yet</h3>
+              <h3 className="text-lg font-medium text-foreground mb-2">No examinations yet</h3>
               <p className="text-sm text-muted-foreground mb-6 text-center">
-                Create your first assignment to start grading with AI.
+                Create your first examination to start grading with AI.
               </p>
               <Button variant="hero" onClick={() => navigate('/upload')}>
                 <Plus className="h-4 w-4 mr-2" />
-                Create Assignment
+                Create Examination
               </Button>
             </div>
           </Card>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
-            No assignments match "{search}"
+            No examinations match "{search}"
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -233,7 +233,7 @@ export default function Assignments() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-muted-foreground hover:text-accent"
-                          title="Edit assignment"
+                          title="Edit examination"
                           onClick={e => {
                             e.stopPropagation();
                             navigate(`/upload/${assignment.id}`);
@@ -248,7 +248,7 @@ export default function Assignments() {
                               size="icon"
                               className="h-8 w-8 text-muted-foreground hover:text-destructive"
                               onClick={e => e.stopPropagation()}
-                              title="Delete assignment"
+                              title="Delete examination"
                             >
                               {deletingId === assignment.id
                                 ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -258,7 +258,7 @@ export default function Assignments() {
                           </AlertDialogTrigger>
                           <AlertDialogContent onClick={e => e.stopPropagation()}>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Assignment?</AlertDialogTitle>
+                              <AlertDialogTitle>Delete Examination?</AlertDialogTitle>
                               <AlertDialogDescription>
                                 This will permanently delete <strong>"{assignment.title}"</strong> along
                                 with all its submissions, questions, grades, and rubrics.

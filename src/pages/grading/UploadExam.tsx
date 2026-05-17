@@ -214,7 +214,7 @@ export default function UploadExam() {
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token;
 
-      const response = await fetch('http://localhost:3001/api/extract-questions-pdf', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/extract-questions-pdf`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -284,7 +284,7 @@ export default function UploadExam() {
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token;
 
-      const response = await fetch('http://localhost:3001/api/extract-model-answers-pdf', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/extract-model-answers-pdf`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`

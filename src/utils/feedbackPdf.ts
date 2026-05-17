@@ -75,7 +75,7 @@ export function generateFeedbackPdfBlob(data: FeedbackPdfData): Blob {
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
-  doc.text(`Assignment: ${data.assignmentTitle}`, margin, y);
+  doc.text(`Examination: ${data.assignmentTitle}`, margin, y);
   y += 5.5;
   doc.text(
     `Date: ${data.gradedAt ? new Date(data.gradedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}`,

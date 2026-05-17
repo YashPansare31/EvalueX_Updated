@@ -154,7 +154,7 @@ export default function Rubrics() {
       
       let parsedText = '';
       try {
-        const response = await fetch('http://localhost:3001/api/parse-rubric-pdf', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/parse-rubric-pdf`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}` // if backend requires it in the future

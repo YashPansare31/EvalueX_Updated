@@ -169,7 +169,7 @@ export default function Results() {
   const exportToCSV = () => {
     const headers = [
       'Student Name',
-      'Assignment',
+      'Examination',
       'Score',
       'Max Score',
       'Percentage',
@@ -246,7 +246,7 @@ export default function Results() {
     doc.setTextColor(255, 255, 255);
     doc.rect(margin - 2, yPos - 5, pageW - margin * 2 + 4, 8, 'F');
     doc.text('Student', cols.student, yPos);
-    doc.text('Assignment', cols.assignment, yPos);
+    doc.text('Examination', cols.assignment, yPos);
     doc.text('Score', cols.score, yPos);
     doc.text('Grade', cols.grade, yPos);
     doc.text('Date', cols.date, yPos);
@@ -366,7 +366,7 @@ export default function Results() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Student</TableHead>
-                      <TableHead>Assignment</TableHead>
+                      <TableHead>Examination</TableHead>
                       <TableHead>Score</TableHead>
                       <TableHead>Grade</TableHead>
                       <TableHead>Graded</TableHead>

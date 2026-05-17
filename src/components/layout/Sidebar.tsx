@@ -33,7 +33,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-  { icon: ClipboardList, label: 'Assignments', path: '/assignments' },
+  { icon: ClipboardList, label: 'Examinations', path: '/assignments' },
   { icon: Upload, label: 'Exam Setup', path: '/upload' },
   { icon: FileUp, label: 'Upload Answers', path: '/upload-answers' },
   { icon: ClipboardCheck, label: 'Grading Review', path: '/grading-review' },
@@ -67,8 +67,8 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
         <div className={cn("flex items-center gap-3", collapsed && "justify-center w-full")}>
-          <div className="h-9 w-9 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
-            <BookOpen className="h-5 w-5 text-accent-foreground" />
+          <div className="h-9 w-9 flex items-center justify-center flex-shrink-0">
+            <img src="/fevicon.ico" alt="EvalueX Logo" className="w-full h-full object-contain" />
           </div>
           {!collapsed && (
             <span className="font-bold text-lg text-sidebar-foreground">EvalueX</span>
